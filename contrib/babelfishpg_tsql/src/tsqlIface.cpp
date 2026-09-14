@@ -10778,9 +10778,31 @@ makeAlterDatabaseStatement(TSqlParser::Alter_databaseContext *ctx)
 	result->cmd_type = PLTSQL_STMT_ALTER_DB;
 	result->lineno = getLineNo(ctx);
 
+	if (ctx->SET() && !ctx->database_optionspec().empty())
+	{
+		/*
+		 * ALTER DATABASE ... SET <options>. TsqlUnsupportedFeatureHandler has
+		 * already rejected any option that cannot be ignored, so the statement
+		 * only has to validate the database name at execution time.
+		 */
+		result->set_options = true;
+		if (ctx->database)
+		{
+			std::string db_name_str = stripQuoteFromId(ctx->database);
+			result->old_db_name = pstrdup(downcase_truncate_identifier(db_name_str.c_str(), db_name_str.length(), true));
+		}
+		else
+			result->old_db_name = NULL;	/* ALTER DATABASE CURRENT */
+		result->new_db_name = NULL;
+		result->orig_new_db_name = NULL;
+
+		return (PLtsql_stmt *) result;
+	}
+
 	std::string old_db_name_str = stripQuoteFromId(ctx->database);
 	std::string new_old_name_str = stripQuoteFromId(ctx->new_name);
 
+	result->set_options = false;
 	result->old_db_name = pstrdup(downcase_truncate_identifier(old_db_name_str.c_str(), old_db_name_str.length(), true));
 	result->new_db_name = pstrdup(downcase_truncate_identifier(new_old_name_str.c_str(), new_old_name_str.length(), true));
 	/* Preserve the user-typed new name (case/length) for the orig_name column. */

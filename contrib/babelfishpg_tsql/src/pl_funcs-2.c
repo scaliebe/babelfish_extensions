@@ -898,8 +898,10 @@ dump_stmt_insert_bulk(PLtsql_stmt_insert_bulk *stmt_insert_bulk)
 void
 dump_stmt_alter_db(PLtsql_stmt_alter_db *stmt_alter_db)
 {
-	//DUMPING ONLY MODIFY NAME
-	printf("ALTER DATABASE %s MODIFY NAME = %s", stmt_alter_db->old_db_name, stmt_alter_db->new_db_name);
+	if (stmt_alter_db->set_options)
+		printf("ALTER DATABASE %s SET <options>", stmt_alter_db->old_db_name ? stmt_alter_db->old_db_name : "CURRENT");
+	else
+		printf("ALTER DATABASE %s MODIFY NAME = %s", stmt_alter_db->old_db_name, stmt_alter_db->new_db_name);
 }
 
 void

@@ -1199,9 +1199,12 @@ typedef struct PLtsql_stmt_alter_db
 	NodeTag		type;
 	PLtsql_stmt_type cmd_type;
 	int			lineno;
-	char	   *old_db_name;
+	char	   *old_db_name;	/* NULL for ALTER DATABASE CURRENT */
 	char	   *new_db_name;
 	char	   *orig_new_db_name;
+	bool		set_options;	/* ALTER DATABASE ... SET <options>: accepted
+								 * under escape_hatch_database_misc_options and
+								 * executed as a no-op */
 } PLtsql_stmt_alter_db;
 
 /*
