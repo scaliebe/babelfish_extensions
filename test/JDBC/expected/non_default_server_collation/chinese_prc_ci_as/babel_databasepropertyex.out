@@ -77,7 +77,7 @@ select databasepropertyex(N'master',N'IsArithmeticAbortEnabled');
 GO
 ~~START~~
 sql_variant
-0
+1
 ~~END~~
 
 select databasepropertyex(N'master',N'IsAutoShrink');

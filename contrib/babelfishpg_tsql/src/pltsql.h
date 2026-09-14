@@ -2430,6 +2430,7 @@ extern bool pltsql_createFunction(ParseState *pstate, PlannedStmt *pstmt, const 
 extern Oid get_sys_varcharoid(void);
 extern Oid get_sys_nvarcharoid(void);
 extern Oid get_sysadmin_oid(void);
+extern int16 get_babelfish_compatibility_level(void);
 extern bool is_tsql_varchar_or_char_datatype(Oid oid); /* sys.char / sys.varchar */
 extern bool is_tsql_nchar_or_nvarchar_datatype(Oid oid); /* sys.nchar / sys.nvarchar */
 extern bool is_tsql_binary_or_varbinary_datatype(Oid oid); /* sys.binary / sys.varbinary */

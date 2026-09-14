@@ -50,6 +50,7 @@ PG_FUNCTION_INFO_V1(connectionproperty);
 PG_FUNCTION_INFO_V1(serverproperty);
 PG_FUNCTION_INFO_V1(sessionproperty);
 PG_FUNCTION_INFO_V1(fulltextserviceproperty);
+PG_FUNCTION_INFO_V1(babelfish_compatibility_level);
 
 extern bool pltsql_ansi_nulls;
 extern bool pltsql_ansi_padding;
@@ -213,6 +214,34 @@ get_product_version_helper(int idx)
 	info = (*common_utility_plugin_ptr->tsql_varchar_input) (temp.data, temp.len, -1);
 	pfree(temp.data);
 	return (VarChar *) info;
+}
+
+/*
+ * get_babelfish_compatibility_level - the database compatibility level that
+ * matches the product version Babelfish reports. SQL Server 2008 through 2022
+ * use compatibility levels 100 through 160 for major versions 10 through 16,
+ * so the level is the major version times ten. Follows
+ * babelfishpg_tds.product_version so that @@VERSION, SERVERPROPERTY and
+ * sys.databases.compatibility_level agree.
+ */
+int16
+get_babelfish_compatibility_level(void)
+{
+	const char *product_version = GetConfigOption("babelfishpg_tds.product_version", true, false);
+	int			major;
+
+	if (product_version == NULL || pg_strcasecmp(product_version, "default") == 0)
+		product_version = BABEL_COMPATIBILITY_VERSION;
+
+	major = atoi(get_version_number(product_version, 0));
+
+	return (int16) (major * 10);
+}
+
+Datum
+babelfish_compatibility_level(PG_FUNCTION_ARGS)
+{
+	PG_RETURN_INT16(get_babelfish_compatibility_level());
 }
 
 static VarChar *
