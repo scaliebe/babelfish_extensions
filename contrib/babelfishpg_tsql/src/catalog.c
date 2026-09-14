@@ -697,7 +697,7 @@ babelfish_helpdb(PG_FUNCTION_ARGS)
 		values[4] = CStringGetTextDatum(tmstmp_str);
 
 		nulls[5] = 1;
-		values[6] = UInt8GetDatum(120);
+		values[6] = UInt8GetDatum(get_babelfish_compatibility_level());
 
 		tuplestore_putvalues(tupstore, tupdesc, values, nulls);
 	}

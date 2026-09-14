@@ -16,8 +16,9 @@ SELECT name
 ,is_read_committed_snapshot_on
 ,recovery_model
 ,recovery_model_desc
-,page_verify_option
-,page_verify_option_desc
+,CASE WHEN page_verify_option = CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 2 ELSE 0 END
+      AND page_verify_option_desc = CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 'CHECKSUM' ELSE 'NONE' END
+      THEN 'consistent with data_checksums' ELSE 'inconsistent' END AS page_verify
 ,is_auto_create_stats_on
 ,is_auto_create_stats_incremental_on
 ,is_auto_update_stats_on

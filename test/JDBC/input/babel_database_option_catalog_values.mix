@@ -1,0 +1,106 @@
+-- tsql
+-- Babelfish does not store database-level SET options. sys.databases and
+-- DATABASEPROPERTYEX report the values every T-SQL session effectively runs
+-- with, the compatibility level follows the product version Babelfish reports,
+-- and AUTO_UPDATE_STATISTICS follows autovacuum.
+CREATE DATABASE babel_db_opt_vals_db;
+GO
+
+SELECT name, is_ansi_null_default_on, is_ansi_nulls_on, is_ansi_padding_on, is_ansi_warnings_on,
+       is_arithabort_on, is_concat_null_yields_null_on, is_quoted_identifier_on, is_numeric_roundabort_on,
+       is_auto_create_stats_on, is_auto_update_stats_on
+FROM sys.databases WHERE name IN ('master', 'babel_db_opt_vals_db') ORDER BY name;
+GO
+
+-- DATABASEPROPERTYEX agrees with sys.databases
+SELECT CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsAnsiNullDefault') AS INT) AS ansi_null_default,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsAnsiNullsEnabled') AS INT) AS ansi_nulls,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsAnsiPaddingEnabled') AS INT) AS ansi_padding,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsAnsiWarningsEnabled') AS INT) AS ansi_warnings,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsArithmeticAbortEnabled') AS INT) AS arithabort,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsNullConcat') AS INT) AS concat_null_yields_null,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsQuotedIdentifiersEnabled') AS INT) AS quoted_identifier,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsNumericRoundAbortEnabled') AS INT) AS numeric_roundabort,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsAutoUpdateStatistics') AS INT) AS auto_update_statistics;
+GO
+
+-- GLOBAL cursors are not supported, so LOCAL is the effective cursor default,
+-- and PAGE_VERIFY reflects the cluster's data checksums
+SELECT is_local_cursor_default,
+       CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsLocalCursorsDefault') AS INT) AS local_cursors_default,
+       CASE WHEN page_verify_option = CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 2 ELSE 0 END
+             AND page_verify_option_desc = CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 'CHECKSUM' ELSE 'NONE' END
+            THEN 'consistent with data_checksums' ELSE 'inconsistent' END AS page_verify
+FROM sys.databases WHERE name = 'babel_db_opt_vals_db';
+GO
+
+-- and both match what a new session runs with
+SELECT CAST(SESSIONPROPERTY('ANSI_NULLS') AS INT) AS ansi_nulls,
+       CAST(SESSIONPROPERTY('ANSI_PADDING') AS INT) AS ansi_padding,
+       CAST(SESSIONPROPERTY('ANSI_WARNINGS') AS INT) AS ansi_warnings,
+       CAST(SESSIONPROPERTY('ARITHABORT') AS INT) AS arithabort,
+       CAST(SESSIONPROPERTY('CONCAT_NULL_YIELDS_NULL') AS INT) AS concat_null_yields_null,
+       CAST(SESSIONPROPERTY('QUOTED_IDENTIFIER') AS INT) AS quoted_identifier,
+       CAST(SESSIONPROPERTY('NUMERIC_ROUNDABORT') AS INT) AS numeric_roundabort;
+GO
+
+-- the compatibility level follows the reported product version
+SELECT compatibility_level, CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) * 10 AS from_product_version
+FROM sys.databases WHERE name = 'babel_db_opt_vals_db';
+GO
+SELECT cmptlevel FROM sys.sysdatabases WHERE name = 'babel_db_opt_vals_db';
+GO
+-- sp_helpdb reports the same level
+SELECT compatibility_level FROM sys.babelfish_helpdb('babel_db_opt_vals_db');
+GO
+-- all three read the same helper
+SELECT sys.babelfish_compatibility_level() AS compatibility_level;
+GO
+
+-- psql
+ALTER SYSTEM SET babelfishpg_tds.product_version = '15.0.4000.1';
+GO
+SELECT pg_reload_conf();
+GO
+SELECT pg_sleep(1);
+GO
+
+-- tsql
+SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS INT) AS product_major_version,
+       compatibility_level
+FROM sys.databases WHERE name = 'babel_db_opt_vals_db';
+GO
+SELECT cmptlevel FROM sys.sysdatabases WHERE name = 'babel_db_opt_vals_db';
+GO
+SELECT sys.babelfish_compatibility_level() AS compatibility_level;
+GO
+
+-- psql
+ALTER SYSTEM RESET babelfishpg_tds.product_version;
+GO
+ALTER SYSTEM SET autovacuum = off;
+GO
+SELECT pg_reload_conf();
+GO
+SELECT pg_sleep(1);
+GO
+
+-- tsql
+SELECT compatibility_level, is_auto_update_stats_on FROM sys.databases WHERE name = 'babel_db_opt_vals_db';
+GO
+SELECT CAST(DATABASEPROPERTYEX('babel_db_opt_vals_db', 'IsAutoUpdateStatistics') AS INT) AS auto_update_statistics;
+GO
+
+-- psql
+ALTER SYSTEM RESET autovacuum;
+GO
+SELECT pg_reload_conf();
+GO
+SELECT pg_sleep(1);
+GO
+
+-- tsql
+SELECT is_auto_update_stats_on FROM sys.databases WHERE name = 'babel_db_opt_vals_db';
+GO
+DROP DATABASE babel_db_opt_vals_db;
+GO

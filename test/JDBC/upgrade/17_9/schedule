@@ -301,6 +301,7 @@ sys_database_principals
 sys_syslogins_dep
 sys-database_recovery_status
 sys-databases
+babel_database_option_catalog_values
 sys-databases-dep
 sys-data_spaces
 sys-datefirst
