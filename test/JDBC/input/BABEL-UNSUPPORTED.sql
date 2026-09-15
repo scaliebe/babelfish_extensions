@@ -152,7 +152,7 @@ EXEC sp_babelfish_configure 'babelfishpg_tsql.escape_hatch_session_settings', 's
 GO
 
 -- simple unsupported query which backend parser can't understand. should throw an error with nice error message
-ALTER DATABASE blah SET ANSI_PADDING OFF;
+ALTER DATABASE blah SET READ_ONLY;
 GO
 
 -- unsupported query in a batch. execution should be aborted.
@@ -163,7 +163,7 @@ SELECT @v;
 GO
 
 DECLARE @v varchar(20);
-ALTER DATABASE blah SET ANSI_PADDING OFF; -- error
+ALTER DATABASE blah SET READ_ONLY; -- error
 SET @v = 'SHOULD NOT BE SHOWN';
 SELECT @v;
 GO
