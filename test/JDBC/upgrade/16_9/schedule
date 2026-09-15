@@ -387,6 +387,7 @@ sys-sysforeignkeys
 sys-sysforeignkeys-dep
 sys-sysindexes
 sys-syslanguages
+babel_langid
 sys-sysobjects
 sys-system_objects
 sys-system_sql_modules

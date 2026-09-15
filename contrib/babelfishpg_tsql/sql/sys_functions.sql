@@ -4417,6 +4417,20 @@ LANGUAGE SQL IMMUTABLE PARALLEL RESTRICTED;
 CREATE OR REPLACE FUNCTION sys.language()
 RETURNS sys.NVARCHAR(128)  AS 'babelfishpg_tsql' LANGUAGE C STABLE;
 
+-- @@LANGID: id of the session language in sys.syslanguages. Babelfish numbers
+-- its languages itself, so the id is looked up by the name @@LANGUAGE reports
+-- rather than taken from the list SQL Server uses.
+CREATE OR REPLACE FUNCTION sys.langid()
+RETURNS SMALLINT AS $$
+    SELECT lang_id
+    FROM sys.babelfish_syslanguages
+    WHERE pg_catalog.lower(lang_name_mssql) = pg_catalog.lower(CAST(sys.language() AS TEXT))
+       OR pg_catalog.lower(lang_alias_mssql) = pg_catalog.lower(CAST(sys.language() AS TEXT))
+    ORDER BY lang_name_mssql IS NULL, lang_id
+    LIMIT 1
+$$ LANGUAGE SQL STABLE PARALLEL SAFE;
+GRANT EXECUTE ON FUNCTION sys.langid() TO PUBLIC;
+
 CREATE OR REPLACE FUNCTION sys.host_name()
 RETURNS sys.NVARCHAR(128)  AS 'babelfishpg_tsql' LANGUAGE C IMMUTABLE PARALLEL SAFE;
 
