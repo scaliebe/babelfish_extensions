@@ -5225,6 +5225,57 @@ GRANT SELECT ON information_schema_tsql.sequences TO PUBLIC;
 -- dependent was missed and should be recreated before this point.
 CALL sys.babelfish_drop_deprecated_object('view', 'sys', 'pg_namespace_ext_deprecated_in_6_3_0');
 
+-- @@LANGID and the locale ids in sys.syslanguages
+CREATE OR REPLACE FUNCTION sys.langid()
+RETURNS SMALLINT AS $$
+    SELECT lang_id
+    FROM sys.babelfish_syslanguages
+    WHERE pg_catalog.lower(lang_name_mssql) = pg_catalog.lower(CAST(sys.language() AS TEXT))
+       OR pg_catalog.lower(lang_alias_mssql) = pg_catalog.lower(CAST(sys.language() AS TEXT))
+    ORDER BY lang_name_mssql IS NULL, lang_id
+    LIMIT 1
+$$ LANGUAGE SQL STABLE PARALLEL SAFE;
+GRANT EXECUTE ON FUNCTION sys.langid() TO PUBLIC;
+
+CREATE OR REPLACE VIEW sys.syslanguages
+AS
+SELECT
+    lang_id AS langid,
+    CAST(pg_catalog.lower(lang_data_jsonb ->> 'date_format'::TEXT) AS SYS.NCHAR(3)) AS dateformat,
+    CAST(lang_data_jsonb -> 'date_first'::TEXT AS SYS.TINYINT) AS datefirst,
+    CAST(NULL AS INT) AS upgrade,
+    CAST(coalesce(lang_name_mssql, lang_name_pg) AS SYS.SYSNAME) AS name,
+    CAST(coalesce(lang_alias_mssql, lang_alias_pg) AS SYS.SYSNAME) AS alias,
+    CAST(array_to_string(ARRAY(SELECT jsonb_array_elements_text(lang_data_jsonb -> 'months_names'::TEXT)), ',') AS SYS.NVARCHAR(372)) AS months,
+    CAST(array_to_string(ARRAY(SELECT jsonb_array_elements_text(lang_data_jsonb -> 'months_shortnames'::TEXT)),',') AS SYS.NVARCHAR(132)) AS shortmonths,
+    CAST(array_to_string(ARRAY(SELECT jsonb_array_elements_text(lang_data_jsonb -> 'days_shortnames'::TEXT)),',') AS SYS.NVARCHAR(217)) AS days,
+    -- Windows locale ids of the languages SQL Server ships; Babelfish-only
+    -- entries keep NULL
+    CAST(CASE spec_culture
+        WHEN 'EN_US' THEN 1033 WHEN 'EN_GB' THEN 2057 WHEN 'DE_DE' THEN 1031 WHEN 'FR_FR' THEN 1036
+        WHEN 'JA_JP' THEN 1041 WHEN 'DA_DK' THEN 1030 WHEN 'ES_ES' THEN 3082 WHEN 'IT_IT' THEN 1040
+        WHEN 'NL_NL' THEN 1043 WHEN 'NN_NO' THEN 2068 WHEN 'PT_BR' THEN 1046 WHEN 'PT_PT' THEN 2070
+        WHEN 'FI' THEN 1035 WHEN 'SV_SE' THEN 1053 WHEN 'CS_CZ' THEN 1029 WHEN 'HU_HU' THEN 1038
+        WHEN 'PL_PL' THEN 1045 WHEN 'RO_RO' THEN 1048 WHEN 'HR_HR' THEN 1050 WHEN 'SK_SK' THEN 1051
+        WHEN 'SL_SI' THEN 1060 WHEN 'EL_GR' THEN 1032 WHEN 'BG_BG' THEN 1026 WHEN 'RU_RU' THEN 1049
+        WHEN 'TR_TR' THEN 1055 WHEN 'ET_EE' THEN 1061 WHEN 'LV_LV' THEN 1062 WHEN 'LT_LT' THEN 1063
+        WHEN 'ZH_TW' THEN 1028 WHEN 'KO_KR' THEN 1042 WHEN 'ZH_CN' THEN 2052 WHEN 'AR_SA' THEN 1025
+        WHEN 'TH_TH' THEN 1054
+        ELSE NULL END AS INT) AS lcid,
+    CAST(CASE spec_culture
+        WHEN 'EN_US' THEN 1033 WHEN 'EN_GB' THEN 2057 WHEN 'DE_DE' THEN 1031 WHEN 'FR_FR' THEN 1036
+        WHEN 'JA_JP' THEN 1041 WHEN 'DA_DK' THEN 1030 WHEN 'ES_ES' THEN 3082 WHEN 'IT_IT' THEN 1040
+        WHEN 'NL_NL' THEN 1043 WHEN 'NN_NO' THEN 2068 WHEN 'PT_BR' THEN 1046 WHEN 'PT_PT' THEN 2070
+        WHEN 'FI' THEN 1035 WHEN 'SV_SE' THEN 1053 WHEN 'CS_CZ' THEN 1029 WHEN 'HU_HU' THEN 1038
+        WHEN 'PL_PL' THEN 1045 WHEN 'RO_RO' THEN 1048 WHEN 'HR_HR' THEN 1050 WHEN 'SK_SK' THEN 1051
+        WHEN 'SL_SI' THEN 1060 WHEN 'EL_GR' THEN 1032 WHEN 'BG_BG' THEN 1026 WHEN 'RU_RU' THEN 1049
+        WHEN 'TR_TR' THEN 1055 WHEN 'ET_EE' THEN 1061 WHEN 'LV_LV' THEN 1062 WHEN 'LT_LT' THEN 1063
+        WHEN 'ZH_TW' THEN 1028 WHEN 'KO_KR' THEN 1042 WHEN 'ZH_CN' THEN 2052 WHEN 'AR_SA' THEN 1025
+        WHEN 'TH_TH' THEN 1054
+        ELSE NULL END AS SMALLINT) AS msglangid
+FROM sys.babelfish_syslanguages;
+GRANT SELECT ON sys.syslanguages TO PUBLIC;
+
 -- Please have this be one of the last statements executed in this upgrade script.
 DROP PROCEDURE sys.babelfish_drop_deprecated_object(varchar, varchar, varchar, varchar);
 

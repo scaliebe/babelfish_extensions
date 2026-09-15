@@ -257,6 +257,7 @@ sys-sysforeignkeys
 sys-sysforeignkeys-dep
 sys-sysindexes
 sys-syslanguages
+babel_langid
 sys-sysobjects
 sys-system_objects-for-13-x
 sys-system_sql_modules

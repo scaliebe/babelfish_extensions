@@ -328,6 +328,7 @@ sys-syscharsets
 sys-syscolumns
 sys-sysforeignkeys
 sys-syslanguages
+babel_langid
 sys-system_sql_modules
 sys-sql_modules_before_16_5
 sys-table_types
