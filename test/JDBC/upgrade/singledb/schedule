@@ -1,3 +1,4 @@
 select_into_rowcount
 TestInt
 babel_collation_latin1_general_versioned
+babel_database_option_catalog_values

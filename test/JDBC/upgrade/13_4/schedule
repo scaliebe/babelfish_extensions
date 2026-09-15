@@ -125,6 +125,7 @@ sys-check_constraints
 sys-column-property
 sys-computed_columns
 sys-databases
+babel_database_option_catalog_values
 sys-datefirst
 sys-default_constraints
 sys-dm_exec_connections

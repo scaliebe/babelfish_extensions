@@ -39,6 +39,7 @@ TestXML
 sys-assembly_types
 sys-database_mirroring
 sys-databases
+babel_database_option_catalog_values
 sys-numbered_procedures
 BABEL-3121
 sys-events
