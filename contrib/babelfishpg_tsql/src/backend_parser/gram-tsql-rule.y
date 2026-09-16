@@ -4226,6 +4226,9 @@ dateadd_arg:
 tsql_type_function_name: IDENT						{ $$ = $1; }
 //			| unreserved_keyword					{ $$ = pstrdup($1); }
 			| type_func_name_keyword				{ $$ = pstrdup($1); }
+			/* T-SQL type names that are unreserved keywords in PostgreSQL */
+			| TEXT_P								{ $$ = pstrdup($1); }
+			| XML_P									{ $$ = pstrdup($1); }
 		;
 
 tokens_remaining:

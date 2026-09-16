@@ -115,7 +115,6 @@ GO
 ALTER TABLE #t1 ALTER COLUMN b VARCHAR
 GO
 
--- TODO: fix this, it should work and not raise a syntax error
 ALTER TABLE #t1 ALTER COLUMN b TEXT
 GO
 
@@ -148,7 +147,7 @@ GO
 ALTER TABLE #t1 ALTER COLUMN b GEOMETRY
 GO
 
--- TODO: fix this, it should work and not raise a syntax error
+-- should raise error due to incompatible types
 ALTER TABLE #t1 ALTER COLUMN b XML
 GO
 

@@ -1045,10 +1045,20 @@ pltsql_pre_parse_analyze(ParseState *pstate, RawStmt *parseTree)
 									Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum - 1);
 									Oid new_typeid;
 									int32 new_typmod;
+									Oid new_collid;
 									typenameTypeIdAndMod(NULL, def->typeName, &new_typeid, &new_typmod);
-									
-									/* Check if column type and typmod is actually changing or just nullability */
-									if (attr->atttypid == new_typeid && attr->atttypmod == new_typmod)
+
+									/*
+									 * A COLLATE clause is part of the type change. Resolve
+									 * it here so that an unknown collation, or a collation
+									 * on a non-collatable type, is reported instead of
+									 * being dropped with the type change below.
+									 */
+									new_collid = GetColumnDefCollation(NULL, def, new_typeid);
+
+									/* Check if column type, typmod or collation is actually changing or just nullability */
+									if (attr->atttypid == new_typeid && attr->atttypmod == new_typmod &&
+										(def->collClause == NULL || attr->attcollation == new_collid))
 									{
 										cmd->subtype = def->is_not_null ? AT_SetNotNull : AT_DropNotNull;
 									}
