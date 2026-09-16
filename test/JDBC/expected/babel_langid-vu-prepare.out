@@ -1,0 +1,6 @@
+CREATE TABLE babel_langid_vu_prepare_t (id INT);
+GO
+INSERT INTO babel_langid_vu_prepare_t VALUES (1);
+GO
+~~ROW COUNT: 1~~
+
