@@ -57,25 +57,32 @@ databasepropertyex(PG_FUNCTION_ARGS)
 		vch = (*common_utility_plugin_ptr->tsql_varchar_input) (ret, strlen(ret), -1);
 	}
 	/* TODO[BABEL-247] */
+	/*
+	 * Babelfish does not store database-level SET options. Every T-SQL session
+	 * starts with ANSI_NULL_DFLT_ON, ANSI_NULLS, ANSI_PADDING, ANSI_WARNINGS,
+	 * ARITHABORT, CONCAT_NULL_YIELDS_NULL and QUOTED_IDENTIFIER ON, which is
+	 * what these database options would default a session to on SQL Server, so
+	 * report them as enabled.
+	 */
 	else if (strcasecmp(property, "IsAnsiNullDefault") == 0)
 	{
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsAnsiNullsEnabled") == 0)
 	{
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsAnsiPaddingEnabled") == 0)
 	{
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsAnsiWarningsEnabled") == 0)
 	{
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsArithmeticAbortEnabled") == 0)
 	{
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsAutoClose") == 0)
 	{
@@ -95,7 +102,8 @@ databasepropertyex(PG_FUNCTION_ARGS)
 	}
 	else if (strcasecmp(property, "IsAutoUpdateStatistics") == 0)
 	{
-		intVal = 0;
+		/* autovacuum keeps statistics up to date, like AUTO_UPDATE_STATISTICS */
+		intVal = (strcmp(GetConfigOption("autovacuum", true, false), "on") == 0) ? 1 : 0;
 	}
 	else if (strcasecmp(property, "IsClone") == 0)
 	{
@@ -118,7 +126,8 @@ databasepropertyex(PG_FUNCTION_ARGS)
 	}
 	else if (strcasecmp(property, "IsLocalCursorsDefault") == 0)
 	{
-		intVal = 0;
+		/* GLOBAL cursors are not supported, so every cursor is LOCAL */
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsMemoryOptimizedElevateToSnapshotEnabled") == 0)
 	{
@@ -126,7 +135,7 @@ databasepropertyex(PG_FUNCTION_ARGS)
 	}
 	else if (strcasecmp(property, "IsNullConcat") == 0)
 	{
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsNumericRoundAbortEnabled") == 0)
 	{
@@ -138,8 +147,7 @@ databasepropertyex(PG_FUNCTION_ARGS)
 	}
 	else if (strcasecmp(property, "IsQuotedIdentifiersEnabled") == 0)
 	{
-		/* TODO:[BABEL-245] */
-		intVal = 0;
+		intVal = 1;
 	}
 	else if (strcasecmp(property, "IsPublished") == 0)
 	{

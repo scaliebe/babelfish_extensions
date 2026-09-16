@@ -2015,6 +2015,13 @@ BEGIN
     END LOOP;
 END $$;
 
+-- Compatibility level derived from the product version Babelfish reports
+-- (babelfishpg_tds.product_version): SQL Server 2008..2022 use levels 100..160
+-- for major versions 10..16.
+CREATE OR REPLACE FUNCTION sys.babelfish_compatibility_level()
+RETURNS SMALLINT AS 'babelfishpg_tsql', 'babelfish_compatibility_level' LANGUAGE C STABLE;
+GRANT EXECUTE ON FUNCTION sys.babelfish_compatibility_level() TO PUBLIC;
+
 ALTER VIEW sys.sysdatabases RENAME TO sysdatabases_deprecated_in_6_3_0;
 
 CREATE OR REPLACE VIEW sys.sysdatabases AS
@@ -2028,7 +2035,7 @@ t.status2,
 CAST(t.crdate AS SYS.DATETIME) AS crdate,
 CAST('1900-01-01 00:00:00.000' AS SYS.DATETIME) AS reserved,
 CAST(0 AS INT) AS category,
-CAST(120 AS SYS.TINYINT) AS cmptlevel,
+CAST(sys.babelfish_compatibility_level() AS SYS.TINYINT) AS cmptlevel,
 CAST(NULL AS SYS.NVARCHAR(260)) AS filename,
 CAST(NULL AS SMALLINT) AS version
 FROM sys.babelfish_sysdatabases AS t
@@ -2936,23 +2943,23 @@ select
   , CAST(1 AS SYS.BIT) as is_read_committed_snapshot_on
   , CAST(1 AS SYS.TINYINT) as recovery_model
   , CAST('FULL' AS SYS.NVARCHAR(60)) as recovery_model_desc
-  , CAST(0 AS SYS.TINYINT) as page_verify_option
-  , CAST(NULL AS SYS.NVARCHAR(60)) as page_verify_option_desc
+  , CAST(CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 2 ELSE 0 END AS SYS.TINYINT) as page_verify_option
+  , CAST(CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 'CHECKSUM' ELSE 'NONE' END AS SYS.NVARCHAR(60)) as page_verify_option_desc
   , CAST(1 AS SYS.BIT) as is_auto_create_stats_on
   , CAST(0 AS SYS.BIT) as is_auto_create_stats_incremental_on
-  , CAST(0 AS SYS.BIT) as is_auto_update_stats_on
+  , CAST(CASE WHEN pg_catalog.current_setting('autovacuum') = 'on' THEN 1 ELSE 0 END AS SYS.BIT) as is_auto_update_stats_on
   , CAST(0 AS SYS.BIT) as is_auto_update_stats_async_on
-  , CAST(0 AS SYS.BIT) as is_ansi_null_default_on
-  , CAST(0 AS SYS.BIT) as is_ansi_nulls_on
-  , CAST(0 AS SYS.BIT) as is_ansi_padding_on
-  , CAST(0 AS SYS.BIT) as is_ansi_warnings_on
-  , CAST(0 AS SYS.BIT) as is_arithabort_on
-  , CAST(0 AS SYS.BIT) as is_concat_null_yields_null_on
+  , CAST(1 AS SYS.BIT) as is_ansi_null_default_on
+  , CAST(1 AS SYS.BIT) as is_ansi_nulls_on
+  , CAST(1 AS SYS.BIT) as is_ansi_padding_on
+  , CAST(1 AS SYS.BIT) as is_ansi_warnings_on
+  , CAST(1 AS SYS.BIT) as is_arithabort_on
+  , CAST(1 AS SYS.BIT) as is_concat_null_yields_null_on
   , CAST(0 AS SYS.BIT) as is_numeric_roundabort_on
-  , CAST(0 AS SYS.BIT) as is_quoted_identifier_on
+  , CAST(1 AS SYS.BIT) as is_quoted_identifier_on
   , CAST(0 AS SYS.BIT) as is_recursive_triggers_on
   , CAST(0 AS SYS.BIT) as is_cursor_close_on_commit_on
-  , CAST(0 AS SYS.BIT) as is_local_cursor_default
+  , CAST(1 AS SYS.BIT) as is_local_cursor_default
   , CAST(0 AS SYS.BIT) as is_fulltext_enabled
   , CAST(0 AS SYS.BIT) as is_trustworthy_on
   , CAST(0 AS SYS.BIT) as is_db_chaining_on

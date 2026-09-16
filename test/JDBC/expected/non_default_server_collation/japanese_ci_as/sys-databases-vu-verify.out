@@ -16,8 +16,9 @@ SELECT name
 ,is_read_committed_snapshot_on
 ,recovery_model
 ,recovery_model_desc
-,page_verify_option
-,page_verify_option_desc
+,CASE WHEN page_verify_option = CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 2 ELSE 0 END
+      AND page_verify_option_desc = CASE WHEN pg_catalog.current_setting('data_checksums') = 'on' THEN 'CHECKSUM' ELSE 'NONE' END
+      THEN 'consistent with data_checksums' ELSE 'inconsistent' END AS page_verify
 ,is_auto_create_stats_on
 ,is_auto_create_stats_incremental_on
 ,is_auto_update_stats_on
@@ -85,7 +86,7 @@ FROM sys.databases
 WHERE name = 'sys_databases_vu_db1';
 GO
 ~~START~~
-varchar#!#tinyint#!#varchar#!#nvarchar#!#tinyint#!#nvarchar#!#bit#!#bit#!#bit#!#tinyint#!#nvarchar#!#bit#!#bit#!#tinyint#!#nvarchar#!#bit#!#tinyint#!#nvarchar#!#tinyint#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#uniqueidentifier#!#bit#!#tinyint#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#uniqueidentifier#!#uniqueidentifier#!#int#!#smallint#!#nvarchar#!#int#!#nvarchar#!#bit#!#bit#!#smallint#!#tinyint#!#nvarchar#!#int#!#int#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#int#!#nvarchar#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit
-sys_databases_vu_db1#!#120#!#japanese_ci_as#!#Not Applicable#!#0#!#MULTI_USER#!#0#!#0#!#0#!#0#!#ONLINE#!#0#!#0#!#1#!#ON#!#1#!#1#!#FULL#!#0#!#<NULL>#!#1#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#<NULL>#!#0#!#0#!#NOTHING#!#0#!#0#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#NONE#!#0#!#0#!#<NULL>#!#0#!#0#!#0#!#0#!#0#!#0#!#Not Applicable#!#<NULL>#!#0#!#0#!#0#!#0#!#0#!#0
+varchar#!#tinyint#!#varchar#!#nvarchar#!#tinyint#!#nvarchar#!#bit#!#bit#!#bit#!#tinyint#!#nvarchar#!#bit#!#bit#!#tinyint#!#nvarchar#!#bit#!#tinyint#!#nvarchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit#!#uniqueidentifier#!#bit#!#tinyint#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#uniqueidentifier#!#uniqueidentifier#!#int#!#smallint#!#nvarchar#!#int#!#nvarchar#!#bit#!#bit#!#smallint#!#tinyint#!#nvarchar#!#int#!#int#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#int#!#nvarchar#!#nvarchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#bit
+sys_databases_vu_db1#!#120#!#japanese_ci_as#!#Not Applicable#!#0#!#MULTI_USER#!#0#!#0#!#0#!#0#!#ONLINE#!#0#!#0#!#1#!#ON#!#1#!#1#!#FULL#!#consistent with data_checksums#!#1#!#0#!#1#!#0#!#1#!#1#!#1#!#1#!#1#!#1#!#0#!#1#!#0#!#0#!#1#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#0#!#<NULL>#!#0#!#0#!#NOTHING#!#0#!#0#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#NONE#!#0#!#0#!#<NULL>#!#0#!#0#!#0#!#0#!#0#!#0#!#Not Applicable#!#<NULL>#!#0#!#0#!#0#!#0#!#0#!#0
 ~~END~~
 
