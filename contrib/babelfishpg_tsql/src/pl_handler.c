@@ -20,6 +20,10 @@
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/table.h"
+#include "access/genam.h"
+#include "catalog/pg_attrdef.h"
+#include "catalog/pg_constraint.h"
+#include "utils/fmgroids.h"
 #include "catalog/heap.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
@@ -190,6 +194,7 @@ static bool is_rowversion_column(ParseState *pstate, ColumnDef *column);
 static void validate_rowversion_column_constraints(ColumnDef *column);
 static void validate_rowversion_table_constraint(Constraint *c, char *rowversion_column_name);
 static Constraint *get_rowversion_default_constraint(TypeName *typname);
+static AttrNumber get_synthesized_default_constraint_column(Oid relid, const char *conname);
 static void revoke_type_permission_from_public(PlannedStmt *pstmt, const char *queryString, bool readOnlyTree,
 											   ProcessUtilityContext context, ParamListInfo params, QueryEnvironment *queryEnv, DestReceiver *dest, QueryCompletion *qc, List *type_name);
 static void set_current_query_is_create_tbl_check_constraint(Node *expr);
@@ -1012,6 +1017,39 @@ pltsql_pre_parse_analyze(ParseState *pstate, RawStmt *parseTree)
 								}
 								break;
 							}
+						case AT_DropConstraint:
+						{
+							/*
+							 * ALTER TABLE ... DROP CONSTRAINT with a name that
+							 * sys.default_constraints synthesised for a column
+							 * default (DF_<table>_<pg_attrdef oid>) drops that
+							 * default. Only names that do not belong to a real
+							 * constraint of the table are resolved this way.
+							 */
+							if (cmd->name && sql_dialect == SQL_DIALECT_TSQL)
+							{
+								Relation rel = relation_openrv_extended(atstmt->relation, AccessShareLock, true);
+
+								if (rel != NULL)
+								{
+									Oid relid = RelationGetRelid(rel);
+
+									if (!OidIsValid(get_relation_constraint_oid(relid, cmd->name, true)))
+									{
+										AttrNumber attnum = get_synthesized_default_constraint_column(relid, cmd->name);
+
+										if (attnum != InvalidAttrNumber)
+										{
+											cmd->subtype = AT_ColumnDefault;
+											cmd->name = get_attname(relid, attnum, false);
+											cmd->def = NULL;
+										}
+									}
+									relation_close(rel, AccessShareLock);
+								}
+							}
+							break;
+						}
 						case AT_AlterColumnType:
 						{
 							ColumnDef *def = castNode(ColumnDef, cmd->def);
@@ -1452,6 +1490,10 @@ pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 							case AT_ColumnDefault:
 								{
 									int			colnamelen = strlen(cmd->name);
+
+									/* DROP DEFAULT carries no expression */
+									if (cmd->def == NULL)
+										break;
 
 									if (nodeTag(cmd->def) == T_FuncCall)
 									{
@@ -2646,6 +2688,58 @@ validate_rowversion_table_constraint(Constraint *c, char *rowversion_column_name
  * column with FuncCall to sys.get_current_full_xact_id(), which outputs
  * current full transaction ID.
  */
+/*
+ * get_synthesized_default_constraint_column
+ *
+ * PostgreSQL has no named default constraints. sys.default_constraints
+ * synthesises the name DF_<table>_<pg_attrdef oid> for every column default,
+ * and applications drop a default by that name with ALTER TABLE ... DROP
+ * CONSTRAINT. Resolve such a name to the column of relid it belongs to, or
+ * return InvalidAttrNumber if the name is not a synthesised default
+ * constraint name of this relation.
+ */
+static AttrNumber
+get_synthesized_default_constraint_column(Oid relid, const char *conname)
+{
+	const char *sep;
+	char	   *endptr;
+	unsigned long adoid;
+	Relation	attrdef_rel;
+	ScanKeyData key;
+	SysScanDesc scan;
+	HeapTuple	tuple;
+	AttrNumber	attnum = InvalidAttrNumber;
+
+	if (conname == NULL || pg_strncasecmp(conname, "df_", 3) != 0)
+		return InvalidAttrNumber;
+
+	sep = strrchr(conname, '_');
+	if (sep == NULL || sep[1] == '\0')
+		return InvalidAttrNumber;
+
+	errno = 0;
+	adoid = strtoul(sep + 1, &endptr, 10);
+	if (errno != 0 || *endptr != '\0' || adoid == 0 || adoid > OID_MAX)
+		return InvalidAttrNumber;
+
+	attrdef_rel = table_open(AttrDefaultRelationId, AccessShareLock);
+	ScanKeyInit(&key, Anum_pg_attrdef_oid, BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum((Oid) adoid));
+	scan = systable_beginscan(attrdef_rel, AttrDefaultOidIndexId, true, NULL, 1, &key);
+	tuple = systable_getnext(scan);
+	if (HeapTupleIsValid(tuple))
+	{
+		Form_pg_attrdef attrdef = (Form_pg_attrdef) GETSTRUCT(tuple);
+
+		if (attrdef->adrelid == relid)
+			attnum = attrdef->adnum;
+	}
+	systable_endscan(scan);
+	table_close(attrdef_rel, AccessShareLock);
+
+	return attnum;
+}
+
 static Constraint *
 get_rowversion_default_constraint(TypeName *typname)
 {
