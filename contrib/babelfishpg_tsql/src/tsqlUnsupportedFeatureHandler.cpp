@@ -910,10 +910,59 @@ antlrcpp::Any TsqlUnsupportedFeatureHandlerImpl::visitCreate_database(TSqlParser
 	return visitChildren(ctx);
 }
 
+/*
+ * Database-level options that Babelfish can accept and ignore under
+ * escape_hatch_database_misc_options. These options either control behaviour
+ * that Babelfish already provides at the session level (the ANSI_* family,
+ * ARITHABORT, QUOTED_IDENTIFIER, cursor defaults, snapshot isolation), or
+ * tune physical storage and recovery aspects that have no counterpart in
+ * PostgreSQL. Options that change what a database *is* (state, user access,
+ * read-only, encryption, mirroring, availability groups, FILESTREAM, service
+ * broker, change tracking) remain unsupported.
+ */
+static bool
+isIgnorableAlterDatabaseOption(TSqlParser::Database_optionspecContext *ctx)
+{
+	return ctx->auto_option()
+		|| ctx->cursor_option()
+		|| ctx->sql_option()
+		|| ctx->recovery_option()
+		|| ctx->snapshot_option()
+		|| ctx->parameterization_option()
+		|| ctx->query_store_option()
+		|| ctx->date_correlation_optimization_option()
+		|| ctx->delayed_durability_option()
+		|| ctx->target_recovery_time_option()
+		|| ctx->accelerated_database_recovery()
+		|| ctx->mixed_page_allocation_option()
+		|| ctx->containment_option()
+		|| ctx->external_access_option()
+		|| ctx->termination();
+}
+
 antlrcpp::Any TsqlUnsupportedFeatureHandlerImpl::visitAlter_database(TSqlParser::Alter_databaseContext *ctx)
 {
-	if (!(ctx->MODIFY() && ctx->NAME() && ctx->EQUAL()))
-		handle(INSTR_UNSUPPORTED_TSQL_ALTER_DATABASE, "ALTER DATABASE", getLineAndPos(ctx));
+	/* ALTER DATABASE ... MODIFY NAME is supported */
+	if (ctx->MODIFY() && ctx->NAME() && ctx->EQUAL())
+		return visitChildren(ctx);
+
+	if (ctx->SET() && !ctx->database_optionspec().empty())
+	{
+		for (auto option : ctx->database_optionspec())
+		{
+			if (isIgnorableAlterDatabaseOption(option))
+			{
+				std::string featureName = "ALTER DATABASE SET " + option->getStart()->getText();
+				std::transform(featureName.begin(), featureName.end(), featureName.begin(), ::toupper);
+				handle(INSTR_UNSUPPORTED_TSQL_ALTER_DATABASE, featureName.c_str(), &st_escape_hatch_database_misc_options, getLineAndPos(option));
+			}
+			else
+				handle(INSTR_UNSUPPORTED_TSQL_ALTER_DATABASE, "ALTER DATABASE", getLineAndPos(ctx));
+		}
+		return visitChildren(ctx);
+	}
+
+	handle(INSTR_UNSUPPORTED_TSQL_ALTER_DATABASE, "ALTER DATABASE", getLineAndPos(ctx));
 	return visitChildren(ctx);
 }
 

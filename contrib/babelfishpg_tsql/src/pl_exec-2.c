@@ -4080,17 +4080,34 @@ exec_stmt_alter_db(PLtsql_execstate *estate, PLtsql_stmt_alter_db *stmt)
 {
 	/* Alter database is not allowed inside a transaction. */
 	PreventInTransactionBlock(true, "ALTER DATABASE");
+
+	if (stmt->set_options)
+	{
+		/*
+		 * ALTER DATABASE ... SET <options> was accepted under
+		 * escape_hatch_database_misc_options. Database-level options are not
+		 * stored anywhere in Babelfish, so apart from checking that the
+		 * database exists and that the user is allowed to alter it, the
+		 * statement is a no-op. The message matches SQL Server's Msg 5011.
+		 */
+		const char *db_name = stmt->old_db_name ? stmt->old_db_name : get_cur_db_name();
+
+		if (!DbidIsValid(get_db_id(db_name)) ||
+			(!has_privs_of_role(GetSessionUserId(), get_sysadmin_oid()) &&
+			 !(get_user_for_database(db_name) && has_privs_of_role(GetSessionUserId(), get_dbcreator_oid()))))
+			ereport(ERROR,
+					(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+					 errmsg("User does not have permission to alter database '%s', the database does not exist, or the database is not in a state that allows access checks.",
+							db_name)));
+		return PLTSQL_RC_OK;
+	}
+
 	/*
 	 * Executing RENAME DATABASE might involve TOAST table access, so ensure we
 	 * have a valid snapshot.
 	 */
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	/*
-	 * Currently Babelfish only support rename, when we extend
-	 * the support at that time we can add a boolean to the stmt
-	 * to identify for rename and conditionally call rename_tsql_db
-	 */
 	rename_tsql_db(stmt->old_db_name, stmt->new_db_name,
 				   (stmt->orig_new_db_name && strcmp(stmt->orig_new_db_name, stmt->new_db_name) != 0) ?
 				   stmt->orig_new_db_name : NULL);

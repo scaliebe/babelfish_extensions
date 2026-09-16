@@ -1,0 +1,223 @@
+-- tsql
+-- ALTER DATABASE ... SET <option> for options that have no counterpart in
+-- Babelfish is accepted and ignored under escape_hatch_database_misc_options
+-- (default: ignore). Options that change the state of a database remain
+-- unsupported.
+CREATE DATABASE babel_alter_db_set_db;
+GO
+CREATE LOGIN babel_alter_db_set_l1 WITH PASSWORD = '12345678';
+GO
+
+-- the option sequence a typical application applies at startup
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULL_DEFAULT ON;
+ALTER DATABASE babel_alter_db_set_db SET ANSI_PADDING ON;
+ALTER DATABASE babel_alter_db_set_db SET ANSI_WARNINGS ON;
+ALTER DATABASE babel_alter_db_set_db SET ARITHABORT ON;
+ALTER DATABASE babel_alter_db_set_db SET CONCAT_NULL_YIELDS_NULL ON;
+ALTER DATABASE babel_alter_db_set_db SET QUOTED_IDENTIFIER ON;
+ALTER DATABASE babel_alter_db_set_db SET NUMERIC_ROUNDABORT OFF;
+ALTER DATABASE babel_alter_db_set_db SET RECURSIVE_TRIGGERS OFF;
+ALTER DATABASE babel_alter_db_set_db SET CURSOR_DEFAULT LOCAL;
+ALTER DATABASE babel_alter_db_set_db SET CURSOR_CLOSE_ON_COMMIT OFF;
+ALTER DATABASE babel_alter_db_set_db SET AUTO_UPDATE_STATISTICS ON;
+ALTER DATABASE babel_alter_db_set_db SET AUTO_UPDATE_STATISTICS_ASYNC OFF;
+ALTER DATABASE babel_alter_db_set_db SET AUTO_CREATE_STATISTICS ON;
+ALTER DATABASE babel_alter_db_set_db SET AUTO_CLOSE OFF;
+ALTER DATABASE babel_alter_db_set_db SET AUTO_SHRINK OFF;
+ALTER DATABASE babel_alter_db_set_db SET PAGE_VERIFY CHECKSUM;
+ALTER DATABASE babel_alter_db_set_db SET RECOVERY SIMPLE;
+ALTER DATABASE babel_alter_db_set_db SET COMPATIBILITY_LEVEL = 150;
+ALTER DATABASE babel_alter_db_set_db SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+ALTER DATABASE babel_alter_db_set_db SET PARAMETERIZATION SIMPLE;
+ALTER DATABASE babel_alter_db_set_db SET DELAYED_DURABILITY = DISABLED;
+ALTER DATABASE babel_alter_db_set_db SET TARGET_RECOVERY_TIME = 60 SECONDS;
+ALTER DATABASE babel_alter_db_set_db SET QUERY_STORE = OFF;
+ALTER DATABASE babel_alter_db_set_db SET TRUSTWORTHY OFF;
+ALTER DATABASE babel_alter_db_set_db SET DB_CHAINING OFF;
+GO
+
+-- several options in one statement, with a termination clause
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON, QUOTED_IDENTIFIER ON, ARITHABORT ON WITH NO_WAIT;
+GO
+
+-- CURRENT and system databases
+ALTER DATABASE CURRENT SET ANSI_NULLS ON;
+GO
+ALTER DATABASE master SET ANSI_NULLS ON;
+GO
+
+-- bracketed / mixed-case database name
+ALTER DATABASE [Babel_Alter_DB_Set_DB] SET ANSI_NULLS ON;
+GO
+
+-- the statement is a no-op: the catalog does not change
+SELECT is_recursive_triggers_on, is_numeric_roundabort_on, compatibility_level FROM sys.databases WHERE name = 'babel_alter_db_set_db';
+GO
+~~START~~
+bit#!#bit#!#tinyint
+0#!#0#!#120
+~~END~~
+
+
+-- the rest of the batch keeps running
+DECLARE @v VARCHAR(20) = 'after alter';
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+SELECT @v;
+GO
+~~START~~
+varchar
+after alter
+~~END~~
+
+
+-- unknown database
+ALTER DATABASE babel_alter_db_set_nonexistent SET ANSI_NULLS ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: User does not have permission to alter database 'babel_alter_db_set_nonexistent', the database does not exist, or the database is not in a state that allows access checks.)~~
+
+
+-- not allowed inside a transaction
+BEGIN TRANSACTION;
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+GO
+~~ERROR (Code: 574)~~
+
+~~ERROR (Message: ALTER DATABASE cannot run inside a transaction block)~~
+
+IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+GO
+
+-- not allowed in a procedure
+CREATE PROCEDURE babel_alter_db_set_p AS ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: An ALTER database statement is not allowed in a procedure, function or trigger.)~~
+
+
+-- options that change the state of a database remain unsupported
+ALTER DATABASE babel_alter_db_set_db SET READ_ONLY;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+ALTER DATABASE babel_alter_db_set_db SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+ALTER DATABASE babel_alter_db_set_db SET OFFLINE;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+ALTER DATABASE babel_alter_db_set_db SET ENCRYPTION ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+ALTER DATABASE babel_alter_db_set_db SET CHANGE_TRACKING = ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+-- ALLOW_SNAPSHOT_ISOLATION keeps its dedicated rejection
+ALTER DATABASE babel_alter_db_set_db SET ALLOW_SNAPSHOT_ISOLATION ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALLOW_SNAPSHOT_ISOLATION' is not currently supported in Babelfish)~~
+
+-- a statement mixing ignorable and unsupported options is rejected as a whole
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON, READ_ONLY;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+-- other ALTER DATABASE forms are still unsupported
+ALTER DATABASE babel_alter_db_set_db COLLATE Latin1_General_CI_AS;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+ALTER DATABASE babel_alter_db_set_db ADD FILEGROUP fg1;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE' is not currently supported in Babelfish)~~
+
+
+-- with the escape hatch set to strict the options are rejected with a hint
+EXEC sp_babelfish_configure 'babelfishpg_tsql.escape_hatch_database_misc_options', 'strict';
+GO
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE SET ANSI_NULLS' is not currently supported in Babelfish. please use babelfishpg_tsql.escape_hatch_database_misc_options to ignore)~~
+
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON, QUOTED_IDENTIFIER ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE SET ANSI_NULLS' is not currently supported in Babelfish. please use babelfishpg_tsql.escape_hatch_database_misc_options to ignore)~~
+
+ALTER DATABASE babel_alter_db_set_db SET COMPATIBILITY_LEVEL = 150;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'ALTER DATABASE SET COMPATIBILITY_LEVEL' is not currently supported in Babelfish. please use babelfishpg_tsql.escape_hatch_database_misc_options to ignore)~~
+
+EXEC sp_babelfish_configure 'babelfishpg_tsql.escape_hatch_database_misc_options', 'ignore';
+GO
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+GO
+
+-- tsql user=babel_alter_db_set_l1 password=12345678
+-- a login without sysadmin or dbcreator privileges cannot alter the database
+ALTER DATABASE babel_alter_db_set_db SET ANSI_NULLS ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: User does not have permission to alter database 'babel_alter_db_set_db', the database does not exist, or the database is not in a state that allows access checks.)~~
+
+ALTER DATABASE master SET ANSI_NULLS ON;
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: User does not have permission to alter database 'master', the database does not exist, or the database is not in a state that allows access checks.)~~
+
+
+-- psql
+-- terminate the session of the test login before dropping it
+SELECT pg_terminate_backend(pid) FROM pg_stat_get_activity(NULL)
+WHERE sys.suser_name(usesysid) = 'babel_alter_db_set_l1' AND backend_type = 'client backend' AND usesysid IS NOT NULL;
+GO
+~~START~~
+bool
+t
+~~END~~
+
+SELECT pg_sleep(1);
+GO
+~~START~~
+void
+
+~~END~~
+
+
+-- tsql
+DROP LOGIN babel_alter_db_set_l1;
+GO
+DROP DATABASE babel_alter_db_set_db;
+GO
