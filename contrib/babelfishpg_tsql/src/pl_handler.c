@@ -4411,6 +4411,33 @@ bbf_ProcessUtility(PlannedStmt *pstmt,
 								}
 							}
 						}
+						else if (cmd->subtype == AT_AlterColumnType && IS_TDS_CONN())
+						{
+							/*
+							 * In T-SQL a view that is not schema-bound does
+							 * not prevent the type change of a column it
+							 * references. Mark such views as broken so that
+							 * they no longer depend on the column; they are
+							 * repaired from their definition on next use. If
+							 * a dependent view cannot be handled, the type
+							 * change is rejected by the engine as before.
+							 */
+							Oid			relid = RangeVarGetRelid(atstmt->relation, AccessExclusiveLock, true);
+							AttrNumber	attnum = InvalidAttrNumber;
+
+							if (OidIsValid(relid) && cmd->name != NULL)
+								attnum = get_attnum(relid, cmd->name);
+
+							if (attnum != InvalidAttrNumber)
+							{
+								ObjectAddress column;
+
+								column.classId = RelationRelationId;
+								column.objectId = relid;
+								column.objectSubId = attnum;
+								handle_bbf_view_binding_on_object_drop(&column, true);
+							}
+						}
 					}
 				}
 				
