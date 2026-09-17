@@ -510,14 +510,15 @@ go
 ~~ERROR (Message: 'MERGE with TOP' is not currently supported in Babelfish)~~
 
 
--- error: OUTPUT is not supported yet
+-- OUTPUT (more tests in BABEL-2920-MERGE-output)
 MERGE INTO babel_2920_t AS t USING (SELECT 3 AS id) AS s ON t.id = s.id
 WHEN MATCHED THEN UPDATE SET qty = qty
 OUTPUT $action;
 go
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 'MERGE with OUTPUT' is not currently supported in Babelfish)~~
+~~START~~
+nvarchar
+UPDATE
+~~END~~
 
 
 -- error: MERGE on a permanent table is not allowed inside a function

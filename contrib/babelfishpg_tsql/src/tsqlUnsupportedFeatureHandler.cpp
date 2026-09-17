@@ -154,7 +154,12 @@ protected:
 			if (ctx->TOP())
 				handle(INSTR_UNSUPPORTED_TSQL_MERGE, "MERGE with TOP", getLineAndPos(ctx));
 			if (ctx->output_clause())
-				handle(INSTR_UNSUPPORTED_TSQL_MERGE, "MERGE with OUTPUT", getLineAndPos(ctx->output_clause()));
+			{
+				if (ctx->output_clause()->output_clause())
+					handle(INSTR_UNSUPPORTED_TSQL_MERGE, "MERGE with multiple OUTPUT clauses", getLineAndPos(ctx->output_clause()));
+				if (ctx->output_clause()->INTO() && ctx->with_expression())
+					handle(INSTR_UNSUPPORTED_TSQL_MERGE, "MERGE with a common table expression and OUTPUT ... INTO", getLineAndPos(ctx->output_clause()));
+			}
 			return visitChildren(ctx);
 		}
 		antlrcpp::Any visitBulk_insert_statement(TSqlParser::Bulk_insert_statementContext *ctx) override;
