@@ -1,0 +1,332 @@
+-- psql
+ALTER SYSTEM SET babelfishpg_tsql.enable_tsql_merge = 'on';
+SELECT pg_reload_conf();
+go
+~~START~~
+bool
+t
+~~END~~
+
+
+SELECT pg_sleep(1);
+go
+~~START~~
+void
+
+~~END~~
+
+
+-- tsql
+-- Tests for the OUTPUT clause of T-SQL MERGE (BABEL-2920)
+CREATE TABLE babel_2920_out_t (id INT PRIMARY KEY, val VARCHAR(20), qty INT)
+go
+CREATE TABLE babel_2920_out_s (id INT PRIMARY KEY, val VARCHAR(20), qty INT)
+go
+INSERT INTO babel_2920_out_t VALUES (1,'one',10),(2,'two',20),(3,'three',30)
+go
+~~ROW COUNT: 3~~
+
+INSERT INTO babel_2920_out_s VALUES (2,'zwei',200),(3,'three',30),(4,'four',400)
+go
+~~ROW COUNT: 3~~
+
+
+-- $action, deleted.* and inserted.* for all three actions; the rows are
+-- collected in a table variable to get a stable order
+DECLARE @r TABLE (act NVARCHAR(10), del_id INT, del_val VARCHAR(20), ins_id INT, ins_val VARCHAR(20))
+MERGE INTO babel_2920_out_t AS t
+USING babel_2920_out_s AS s ON t.id = s.id
+WHEN MATCHED AND s.val <> t.val THEN UPDATE SET val = s.val, qty = s.qty
+WHEN NOT MATCHED BY TARGET THEN INSERT (id, val, qty) VALUES (s.id, s.val, s.qty)
+WHEN NOT MATCHED BY SOURCE THEN DELETE
+OUTPUT $action, deleted.id, deleted.val, inserted.id, inserted.val INTO @r;
+SELECT * FROM @r ORDER BY COALESCE(del_id, ins_id)
+go
+~~ROW COUNT: 3~~
+
+~~START~~
+nvarchar#!#int#!#varchar#!#int#!#varchar
+DELETE#!#1#!#one#!#<NULL>#!#<NULL>
+UPDATE#!#2#!#two#!#2#!#zwei
+INSERT#!#<NULL>#!#<NULL>#!#4#!#four
+~~END~~
+
+
+SELECT * FROM babel_2920_out_t ORDER BY id
+go
+~~START~~
+int#!#varchar#!#int
+2#!#zwei#!#200
+3#!#three#!#30
+4#!#four#!#400
+~~END~~
+
+
+-- OUTPUT to the client: default column name of $action, column aliases
+MERGE INTO babel_2920_out_t AS t
+USING (SELECT 2 AS id) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty = 201
+OUTPUT $action, deleted.qty AS old_qty, inserted.qty AS new_qty;
+go
+~~START~~
+nvarchar#!#int#!#int
+UPDATE#!#200#!#201
+~~END~~
+
+
+-- source columns, expressions and an alias for $action
+MERGE babel_2920_out_t AS t
+USING (SELECT 3 AS id, 5 AS step) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET t.qty = t.qty + s.step
+OUTPUT $action AS act, s.id, s.step, inserted.qty - deleted.qty AS diff, UPPER(inserted.val) AS v;
+go
+~~START~~
+nvarchar#!#int#!#int#!#int#!#varchar
+UPDATE#!#3#!#5#!#5#!#THREE
+~~END~~
+
+
+-- @@ROWCOUNT after MERGE with OUTPUT
+DECLARE @ids TABLE (id INT)
+MERGE INTO babel_2920_out_t AS t
+USING babel_2920_out_s AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty = s.qty
+OUTPUT inserted.id INTO @ids;
+SELECT @@ROWCOUNT
+go
+~~ROW COUNT: 3~~
+
+~~START~~
+int
+3
+~~END~~
+
+
+-- OUTPUT INTO a table variable
+DECLARE @res TABLE (act NVARCHAR(10), id INT)
+MERGE INTO babel_2920_out_t AS t
+USING (SELECT 5 AS id, 'five' AS val) AS s ON t.id = s.id
+WHEN NOT MATCHED THEN INSERT (id, val, qty) VALUES (s.id, s.val, 0)
+OUTPUT $action, inserted.id INTO @res;
+SELECT * FROM @res
+go
+~~ROW COUNT: 1~~
+
+~~START~~
+nvarchar#!#int
+INSERT#!#5
+~~END~~
+
+
+-- OUTPUT INTO a permanent table with explicit target columns
+CREATE TABLE babel_2920_out_log (id INT, act NVARCHAR(10), note VARCHAR(10) DEFAULT 'log')
+go
+
+MERGE INTO babel_2920_out_t AS t
+USING (SELECT 5 AS id UNION ALL SELECT 6) AS s ON t.id = s.id
+WHEN MATCHED THEN DELETE
+WHEN NOT MATCHED THEN INSERT (id, val, qty) VALUES (s.id, 'six', 6)
+OUTPUT COALESCE(inserted.id, deleted.id), $action INTO babel_2920_out_log (id, act);
+go
+~~ROW COUNT: 2~~
+
+
+SELECT * FROM babel_2920_out_log ORDER BY id
+go
+~~START~~
+int#!#nvarchar#!#varchar
+5#!#DELETE#!#log
+6#!#INSERT#!#log
+~~END~~
+
+
+-- a table variable as source, the join condition that never matches and the
+-- source column together with the generated identity value in OUTPUT INTO
+CREATE TABLE babel_2920_out_idt (genid INT IDENTITY(100,1) PRIMARY KEY, note VARCHAR(40))
+go
+
+BEGIN TRANSACTION
+go
+
+DECLARE @src TABLE (lfdnr INT NOT NULL PRIMARY KEY);
+DECLARE @map TABLE (lfdnr INT NOT NULL PRIMARY KEY, genid INT NOT NULL);
+INSERT INTO @src VALUES (11), (12), (13);
+MERGE INTO babel_2920_out_idt AS ziel
+USING @src AS quelle ON
+    (1 = 0)
+WHEN NOT MATCHED THEN
+    INSERT (note)
+    VALUES (NULL)
+OUTPUT
+    quelle.lfdnr,
+    INSERTED.genid
+INTO @map (
+    lfdnr,
+    genid
+);
+SELECT @@ROWCOUNT;
+SELECT * FROM @map ORDER BY lfdnr;
+go
+~~ROW COUNT: 3~~
+
+~~ROW COUNT: 3~~
+
+~~START~~
+int
+3
+~~END~~
+
+~~START~~
+int#!#int
+11#!#100
+12#!#101
+13#!#102
+~~END~~
+
+
+COMMIT
+go
+
+-- in a procedure, OUTPUT to the client and OUTPUT INTO
+CREATE PROCEDURE babel_2920_out_p @id INT AS
+BEGIN
+    DECLARE @log TABLE (act NVARCHAR(10), id INT);
+    MERGE INTO babel_2920_out_t AS t USING (SELECT @id AS id) AS s ON t.id = s.id
+    WHEN MATCHED THEN UPDATE SET qty = 0
+    WHEN NOT MATCHED THEN INSERT (id, val, qty) VALUES (s.id, 'proc', 0)
+    OUTPUT $action, inserted.id INTO @log;
+    MERGE INTO babel_2920_out_t AS t USING (SELECT @id AS id) AS s ON t.id = s.id
+    WHEN MATCHED THEN UPDATE SET qty = 1
+    OUTPUT $action, inserted.qty;
+    SELECT * FROM @log;
+END
+go
+
+EXEC babel_2920_out_p 7
+go
+~~ROW COUNT: 1~~
+
+~~START~~
+nvarchar#!#int
+UPDATE#!#1
+~~END~~
+
+~~START~~
+nvarchar#!#int
+INSERT#!#7
+~~END~~
+
+
+EXEC babel_2920_out_p 7
+go
+~~ROW COUNT: 1~~
+
+~~START~~
+nvarchar#!#int
+UPDATE#!#1
+~~END~~
+
+~~START~~
+nvarchar#!#int
+UPDATE#!#7
+~~END~~
+
+
+-- the rolled back MERGE leaves no OUTPUT INTO rows in a permanent table
+BEGIN TRANSACTION
+go
+
+MERGE INTO babel_2920_out_t AS t USING (SELECT 8 AS id) AS s ON t.id = s.id
+WHEN NOT MATCHED THEN INSERT (id, val, qty) VALUES (s.id, 'eight', 8)
+OUTPUT inserted.id, $action INTO babel_2920_out_log (id, act);
+go
+~~ROW COUNT: 1~~
+
+
+ROLLBACK
+go
+
+SELECT COUNT(*) FROM babel_2920_out_log WHERE id = 8
+go
+~~START~~
+int
+0
+~~END~~
+
+
+-- error: OUTPUT to the client is not allowed in a function
+CREATE FUNCTION babel_2920_out_f() RETURNS INT AS
+BEGIN
+    DECLARE @tv TABLE (id INT)
+    MERGE INTO @tv AS t USING (SELECT 1 AS id) AS s ON t.id = s.id
+    WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id)
+    OUTPUT inserted.id;
+    RETURN 1
+END
+go
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: Invalid use of a side-effecting operator 'MERGE' within a function.)~~
+
+
+-- error: two OUTPUT clauses
+MERGE INTO babel_2920_out_t AS t USING (SELECT 1 AS id) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty = qty
+OUTPUT inserted.id INTO babel_2920_out_log (id)
+OUTPUT inserted.id;
+go
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'MERGE with multiple OUTPUT clauses' is not currently supported in Babelfish)~~
+
+
+-- error: common table expression together with OUTPUT INTO
+WITH c AS (SELECT 1 AS id)
+MERGE INTO babel_2920_out_t AS t USING c AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty = qty
+OUTPUT inserted.id INTO babel_2920_out_log (id);
+go
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'MERGE with a common table expression and OUTPUT ... INTO' is not currently supported in Babelfish)~~
+
+
+-- a common table expression with OUTPUT to the client works
+WITH c AS (SELECT 1 AS id)
+MERGE INTO babel_2920_out_t AS t USING c AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty = 11
+OUTPUT $action, inserted.id, inserted.qty;
+go
+~~START~~
+nvarchar#!#int#!#int
+~~END~~
+
+
+DROP PROCEDURE babel_2920_out_p
+go
+DROP TABLE babel_2920_out_idt
+go
+DROP TABLE babel_2920_out_log
+go
+DROP TABLE babel_2920_out_s
+go
+DROP TABLE babel_2920_out_t
+go
+
+-- psql
+ALTER SYSTEM RESET babelfishpg_tsql.enable_tsql_merge;
+SELECT pg_reload_conf();
+go
+~~START~~
+bool
+t
+~~END~~
+
+
+SELECT pg_sleep(1);
+go
+~~START~~
+void
+
+~~END~~
+

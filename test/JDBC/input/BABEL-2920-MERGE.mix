@@ -279,7 +279,7 @@ MERGE TOP (1) INTO babel_2920_t AS t USING babel_2920_s AS s ON t.id = s.id
 WHEN MATCHED THEN UPDATE SET qty = qty + 1;
 go
 
--- error: OUTPUT is not supported yet
+-- OUTPUT (more tests in BABEL-2920-MERGE-output)
 MERGE INTO babel_2920_t AS t USING (SELECT 3 AS id) AS s ON t.id = s.id
 WHEN MATCHED THEN UPDATE SET qty = qty
 OUTPUT $action;

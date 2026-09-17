@@ -832,6 +832,8 @@ exec_run_dml_with_output(PLtsql_execstate *estate, PLtsql_stmt_push_result *stmt
 			rc = SPI_OK_DELETE_RETURNING;
 		else if (cmd == CMD_UPDATE)
 			rc = SPI_OK_UPDATE_RETURNING;
+		else if (cmd == CMD_MERGE)
+			rc = SPI_OK_MERGE_RETURNING;
 	}
 
 	receiver->rDestroy(receiver);

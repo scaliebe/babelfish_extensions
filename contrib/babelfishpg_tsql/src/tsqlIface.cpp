@@ -154,6 +154,7 @@ static void *makeBatch(TSqlParser::Tsql_fileContext *ctx, tsqlBuilder &builder);
 static void process_execsql_destination(TSqlParser::Dml_statementContext *ctx, PLtsql_stmt_execsql *stmt);
 static void process_execsql_remove_unsupported_tokens(TSqlParser::Dml_statementContext *ctx, PLtsql_expr_query_mutator *exprMutator);
 static void post_process_merge_statement(TSqlParser::Merge_statementContext *mctx, PLtsql_expr *sqlstmt, PLtsql_expr_query_mutator *exprMutator);
+static void rewrite_merge_output_refs(antlr4::tree::ParseTree *node);
 static bool post_process_create_table(TSqlParser::Create_tableContext *ctx, PLtsql_stmt_execsql *stmt, TSqlParser::Ddl_statementContext *baseCtx);
 static bool post_process_alter_table(TSqlParser::Alter_tableContext *ctx, PLtsql_stmt_execsql *stmt, TSqlParser::Ddl_statementContext *baseCtx);
 static bool post_process_create_index(TSqlParser::Create_indexContext *ctx, PLtsql_stmt_execsql *stmt, TSqlParser::Ddl_statementContext *baseCtx);
@@ -219,6 +220,14 @@ static ANTLR_result antlr_parse_query(const char *sourceText, bool useSSLParsing
 std::string rewriteDoubleQuotedString(const std::string strDoubleQuoted);
 std::string escapeDoubleQuotes(const std::string strWithDoubleQuote);
 static bool in_execute_body_batch = false;
+
+/*
+ * Set while the text of a batch-level statement (CREATE PROCEDURE, FUNCTION,
+ * TRIGGER) is mutated. The body of such a statement is stored as T-SQL and
+ * parsed again when it is compiled, so rewrites that do not result in valid
+ * T-SQL must be left to that second pass.
+ */
+static bool in_batch_level_statement_mutation = false;
 static bool in_execute_body_batch_parameter = false;
 static const std::string fragment_SELECT_prefix = "SELECT "; // fragment prefix for expressions
 static const std::string fragment_EXEC_prefix   = "EXEC ";   // fragment prefix for execute_body_batch
@@ -1692,7 +1701,17 @@ public:
 
 	void exitDml_statement(TSqlParser::Dml_statementContext *ctx) override
 	{
-		process_execsql_remove_unsupported_tokens(ctx, mutator);
+		in_batch_level_statement_mutation = true;
+		try
+		{
+			process_execsql_remove_unsupported_tokens(ctx, mutator);
+		}
+		catch (...)
+		{
+			in_batch_level_statement_mutation = false;
+			throw;
+		}
+		in_batch_level_statement_mutation = false;
 		if (mutator && query_hints.size() && enable_hint_mapping)
 		{
 			add_query_hints(mutator, ctx->start->getStartIndex());
@@ -2414,6 +2433,10 @@ public:
 			else if (ctx->delete_statement() && ctx->delete_statement()->output_clause() && (!ctx->delete_statement()->output_clause()->INTO() || !ctx->delete_statement()->output_clause()->LOCAL_ID()))
 			{
 				throw PGErrorWrapperException(ERROR, ERRCODE_INVALID_FUNCTION_DEFINITION, "Invalid use of a side-effecting operator 'DELETE' within a function.", getLineAndPos(ctx->delete_statement()->output_clause()));
+			}
+			else if (ctx->merge_statement() && ctx->merge_statement()->output_clause() && (!ctx->merge_statement()->output_clause()->INTO() || !ctx->merge_statement()->output_clause()->LOCAL_ID()))
+			{
+				throw PGErrorWrapperException(ERROR, ERRCODE_INVALID_FUNCTION_DEFINITION, "Invalid use of a side-effecting operator 'MERGE' within a function.", getLineAndPos(ctx->merge_statement()->output_clause()));
 			}
 		}
 
@@ -8075,18 +8098,38 @@ void process_execsql_remove_unsupported_tokens(TSqlParser::Dml_statementContext 
 
 /*
  * Rewrite T-SQL MERGE into PostgreSQL MERGE syntax:
- *   - MERGE <target>           => MERGE INTO <target>
- *   - SET <alias>.<col> = ...  => SET <col> = ...
- *   - SET <col> += <expr>      => SET <col> = <col> + (<expr>)
+ *   - MERGE <target>                => MERGE INTO <target>
+ *   - SET <alias>.<col> = ...       => SET <col> = ...
+ *   - SET <col> += <expr>           => SET <col> = <col> + (<expr>)
+ *   - OUTPUT ...                    => RETURNING ...
+ *   - $action                       => merge_action()
+ *   - inserted.<col> / deleted.<col> in OUTPUT => new.<col> / old.<col>
  * Everything else (WHEN [NOT] MATCHED [BY SOURCE|TARGET] variants,
  * AND conditions, DEFAULT VALUES, ...) is already valid PG MERGE syntax.
  */
 static void post_process_merge_statement(TSqlParser::Merge_statementContext *mctx, PLtsql_expr *sqlstmt, PLtsql_expr_query_mutator *exprMutator)
 {
-	/* PG requires INTO; T-SQL allows omitting it */
-	if (!mctx->INTO())
-		rewritten_query_fragment.emplace(std::make_pair(mctx->MERGE()->getSymbol()->getStartIndex(),
-			std::make_pair(::getFullText(mctx->MERGE()), ::getFullText(mctx->MERGE()) + " INTO")));
+	ParserRuleContext *baseCtx = exprMutator->ctx;
+	bool rewrite_output = mctx->output_clause() && !in_batch_level_statement_mutation;
+	bool output_into = rewrite_output && mctx->output_clause()->INTO();
+
+	/*
+	 * PG requires INTO after MERGE; T-SQL allows omitting it.  For
+	 * OUTPUT ... INTO the whole statement additionally becomes a
+	 * data-modifying CTE feeding an INSERT (see below), which needs
+	 * an opening prefix in front of MERGE.
+	 */
+	{
+		std::string mergeTok = ::getFullText(mctx->MERGE());
+		std::string repl = mergeTok;
+		if (!mctx->INTO())
+			repl += " INTO";
+		if (output_into)
+			repl = "WITH bbf_merge_output_cte AS (" + repl;
+		if (repl != mergeTok)
+			rewritten_query_fragment.emplace(std::make_pair(mctx->MERGE()->getSymbol()->getStartIndex(),
+				std::make_pair(mergeTok, repl)));
+	}
 
 	for (auto wctx : mctx->when_matches())
 	{
@@ -8119,6 +8162,96 @@ static void post_process_merge_statement(TSqlParser::Merge_statementContext *mct
 			}
 		}
 	}
+
+	if (rewrite_output)
+	{
+		auto octx = mctx->output_clause();
+		Assert(octx->OUTPUT());
+		rewritten_query_fragment.emplace(std::make_pair(octx->OUTPUT()->getSymbol()->getStartIndex(),
+			std::make_pair(::getFullText(octx->OUTPUT()), "RETURNING")));
+		rewrite_merge_output_refs(octx);
+
+		if (output_into)
+		{
+			/*
+			 * OUTPUT <exprs> INTO <target> [(cols)]  =>
+			 * WITH bbf_merge_output_cte AS (MERGE ... RETURNING <exprs>)
+			 * INSERT INTO <target> [(cols)] SELECT * FROM bbf_merge_output_cte;
+			 * (columns are matched by position, like SQL Server)
+			 */
+			if (!mctx->final_char || mctx->final_char->getText() != ";")
+				throw PGErrorWrapperException(ERROR, ERRCODE_FEATURE_NOT_SUPPORTED,
+					"'MERGE with OUTPUT ... INTO inside another statement' is not currently supported in Babelfish", getLineAndPos(octx));
+
+			std::string tgt = octx->LOCAL_ID() ? ::getFullText(octx->LOCAL_ID()) : ::getFullText(octx->table_name());
+			std::string cols = octx->column_name_list() ? (" (" + ::getFullText(octx->column_name_list()) + ")") : "";
+
+			/* remove "INTO <target> [(cols)]" from the RETURNING clause */
+			replaceTokenStringFromQuery(sqlstmt, octx->INTO()->getSymbol(), octx->getStop(), NULL, baseCtx);
+
+			/* close the CTE and append the INSERT in place of the final semicolon */
+			rewritten_query_fragment.emplace(std::make_pair(mctx->final_char->getStartIndex(),
+				std::make_pair(std::string(";"),
+					") INSERT INTO " + tgt + cols + " SELECT * FROM bbf_merge_output_cte;")));
+		}
+	}
+}
+
+/*
+ * Walk an OUTPUT clause subtree of a MERGE statement and rewrite T-SQL
+ * transition references to their PG RETURNING equivalents:
+ * $action => merge_action(), inserted.* => new.*, deleted.* => old.*
+ */
+static void rewrite_merge_output_refs(antlr4::tree::ParseTree *node)
+{
+	if (auto ocn = dynamic_cast<TSqlParser::Output_column_nameContext *>(node))
+	{
+		if (ocn->DOLLAR_ACTION())
+		{
+			/* SQL Server types $action as nvarchar(10) and names the column "$action" when no alias is given */
+			auto elem = dynamic_cast<TSqlParser::Output_dml_list_elemContext *>(ocn->parent);
+			std::string repl = (elem && !elem->as_column_alias())
+				? "CAST(merge_action() AS NVARCHAR(10)) AS \"$action\"" : "CAST(merge_action() AS NVARCHAR(10))";
+			rewritten_query_fragment.emplace(std::make_pair(ocn->DOLLAR_ACTION()->getSymbol()->getStartIndex(),
+				std::make_pair(::getFullText(ocn->DOLLAR_ACTION()), repl)));
+		}
+		else if (ocn->INSERTED())
+			rewritten_query_fragment.emplace(std::make_pair(ocn->INSERTED()->getSymbol()->getStartIndex(),
+				std::make_pair(::getFullText(ocn->INSERTED()), "new")));
+		else if (ocn->DELETED())
+			rewritten_query_fragment.emplace(std::make_pair(ocn->DELETED()->getSymbol()->getStartIndex(),
+				std::make_pair(::getFullText(ocn->DELETED()), "old")));
+		return;
+	}
+
+	if (auto fcn = dynamic_cast<TSqlParser::Full_column_nameContext *>(node))
+	{
+		/* inserted.c / deleted.c used inside an OUTPUT expression */
+		TSqlParser::IdContext *qual = fcn->tablename ? fcn->tablename : fcn->table;
+		if (qual && fcn->DOT().size() == 1)
+		{
+			std::string qualText = ::getFullText(qual);
+			if (pg_strcasecmp(qualText.c_str(), "inserted") == 0)
+				rewritten_query_fragment.emplace(std::make_pair(qual->start->getStartIndex(),
+					std::make_pair(qualText, "new")));
+			else if (pg_strcasecmp(qualText.c_str(), "deleted") == 0)
+				rewritten_query_fragment.emplace(std::make_pair(qual->start->getStartIndex(),
+					std::make_pair(qualText, "old")));
+		}
+		return;
+	}
+
+	if (auto term = dynamic_cast<antlr4::tree::TerminalNode *>(node))
+	{
+		/* $action used as a plain expression (dollar_action_expr) */
+		if (term->getSymbol()->getType() == TSqlParser::DOLLAR_ACTION)
+			rewritten_query_fragment.emplace(std::make_pair(term->getSymbol()->getStartIndex(),
+				std::make_pair(::getFullText(term), "CAST(merge_action() AS NVARCHAR(10))")));
+		return;
+	}
+
+	for (auto child : node->children)
+		rewrite_merge_output_refs(child);
 }
 
 static void
