@@ -1298,7 +1298,28 @@ antlrcpp::Any TsqlUnsupportedFeatureHandlerImpl::visitSet_statement(TSqlParser::
 			/* don't strip id here. let them throw an "unrecognized SET option" error in tsqlIface */
 			std::string val = getFullText(sctx->id().front());
 			if (pg_strcasecmp("DATEFORMAT", val.c_str()) == 0)
-				handle(INSTR_UNSUPPORTED_TSQL_OPTION_DATEFORMAT, "DATEFORMAT", &st_escape_hatch_session_settings, getLineAndPos(sctx));
+			{
+				/* mdy, dmy and ymd map to the DateStyle field order, the other formats have no equivalent */
+				bool supported = false;
+
+				if (sctx->id().size() > 1)
+				{
+					std::string format = ::stripQuoteFromId(sctx->id()[1]);
+					supported = (pg_strcasecmp("mdy", format.c_str()) == 0) ||
+								(pg_strcasecmp("dmy", format.c_str()) == 0) ||
+								(pg_strcasecmp("ymd", format.c_str()) == 0);
+				}
+				else if (sctx->constant_LOCAL_ID() && sctx->constant_LOCAL_ID()->constant() && sctx->constant_LOCAL_ID()->constant()->char_string())
+				{
+					std::string format = getFullText(sctx->constant_LOCAL_ID()->constant()->char_string());
+					supported = (pg_strcasecmp("'mdy'", format.c_str()) == 0) ||
+								(pg_strcasecmp("'dmy'", format.c_str()) == 0) ||
+								(pg_strcasecmp("'ymd'", format.c_str()) == 0);
+				}
+
+				if (!supported)
+					handle(INSTR_UNSUPPORTED_TSQL_OPTION_DATEFORMAT, "DATEFORMAT", &st_escape_hatch_session_settings, getLineAndPos(sctx));
+			}
 			if (pg_strcasecmp("DEADLOCK_PRIORITY", val.c_str()) == 0)
 				handle(INSTR_UNSUPPORTED_TSQL_OPTION_DEADLOCK_PRIORITY, "DEADLOCK_PRIORITY", &st_escape_hatch_session_settings, getLineAndPos(sctx));
 			if (pg_strcasecmp("QUERY_GOVERNOR_COST_LIMIT", val.c_str()) == 0)

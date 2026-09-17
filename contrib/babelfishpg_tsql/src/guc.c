@@ -20,6 +20,7 @@
 
 static int	migration_mode = SINGLE_DB;
 bool		pltsql_weak_view_binding = false;
+char	   *pltsql_dateformat = NULL;
 bool		enable_ownership_structure = false;
 
 bool		enable_metadata_inconsistency_check = true;
@@ -106,6 +107,7 @@ static bool check_babelfish_dump_restore_min_oid(char **newval, void **extra, Gu
 static bool check_numeric_roundabort(bool *newval, void **extra, GucSource source);
 static bool check_cursor_close_on_commit(bool *newval, void **extra, GucSource source);
 static bool check_language(char **newval, void **extra, GucSource source);
+static bool check_dateformat(char **newval, void **extra, GucSource source);
 static bool check_noexec(bool *newval, void **extra, GucSource source);
 static bool check_showplan_all(bool *newval, void **extra, GucSource source);
 static bool check_showplan_text(bool *newval, void **extra, GucSource source);
@@ -120,6 +122,7 @@ static void assign_ansi_warnings(bool newval, void *extra);
 static void assign_ansi_padding(bool newval, void *extra);
 static void assign_concat_null_yields_null(bool newval, void *extra);
 static void assign_language(const char *newval, void *extra);
+static void assign_dateformat(const char *newval, void *extra);
 static void assign_lock_timeout(int newval, void *extra);
 static void assign_datefirst(int newval, void *extra);
 static bool check_no_browsetable(bool *newval, void **extra, GucSource source);
@@ -309,6 +312,50 @@ check_language(char **newval, void **extra, GucSource source)
 	else if (escape_hatch_session_settings == EH_IGNORE)
 		*newval = PLTSQL_DEFAULT_LANGUAGE;	/* overwrite to a default value */
 	return true;
+}
+
+/*
+ * DATEFORMAT is the order of the date parts in character strings. mdy, dmy and
+ * ymd correspond to the DateOrder of PostgreSQL. ydm, myd and dym have no
+ * equivalent and stay under escape_hatch_session_settings; when ignored, the
+ * closest order for strings with a four-digit year is used. Other values are
+ * accepted without effect like before. An empty value means that the order
+ * follows DateStyle.
+ */
+static bool
+check_dateformat(char **newval, void **extra, GucSource source)
+{
+	char	   *p;
+
+	for (p = *newval; *p; p++)
+		*p = pg_tolower((unsigned char) *p);
+
+	return true;
+}
+
+static void
+assign_dateformat(const char *newval, void *extra)
+{
+	if (strcmp(newval, "mdy") == 0 || strcmp(newval, "myd") == 0)
+		DateOrder = DATEORDER_MDY;
+	else if (strcmp(newval, "dmy") == 0 || strcmp(newval, "dym") == 0 || strcmp(newval, "ydm") == 0)
+		DateOrder = DATEORDER_DMY;
+	else if (strcmp(newval, "ymd") == 0)
+		DateOrder = DATEORDER_YMD;
+	else if (*newval == '\0')
+	{
+		/* back to the order given by DateStyle */
+		const char *datestyle = GetConfigOption("datestyle", true, false);
+
+		if (datestyle == NULL)
+			return;
+		if (strstr(datestyle, "DMY"))
+			DateOrder = DATEORDER_DMY;
+		else if (strstr(datestyle, "YMD"))
+			DateOrder = DATEORDER_YMD;
+		else
+			DateOrder = DATEORDER_MDY;
+	}
 }
 
 static bool
@@ -894,6 +941,14 @@ define_custom_variables(void)
 							   "us_english",	/* TODO correct boot value? */
 							   PGC_USERSET, 0,
 							   check_language, assign_language, NULL);
+
+	DefineCustomStringVariable("babelfishpg_tsql.dateformat",
+							   gettext_noop("T-SQL compatibility DATEFORMAT option."),
+							   NULL,
+							   &pltsql_dateformat,
+							   "",
+							   PGC_USERSET, 0,
+							   check_dateformat, assign_dateformat, NULL);
 
 	DefineCustomBoolVariable("babelfishpg_tsql.xact_abort",
 							 gettext_noop("enable xact abort"),

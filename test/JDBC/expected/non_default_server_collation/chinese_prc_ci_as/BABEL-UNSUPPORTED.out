@@ -81,7 +81,7 @@ GO
 ~~ERROR (Message: 'OFFSETS' is not currently supported in Babelfish. please use babelfishpg_tsql.escape_hatch_session_settings to ignore)~~
 
 
-SET DATEFORMAT dmy;
+SET DATEFORMAT ydm;
 GO
 ~~ERROR (Code: 33557097)~~
 
