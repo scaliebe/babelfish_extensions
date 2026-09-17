@@ -5521,7 +5521,7 @@ pltsql_update_identity_insert_sequence(PLtsql_expr *expr)
 
 				if (attr->attidentity)
 				{
-					id_attname = NameStr(attr->attname);
+					id_attname = pstrdup(NameStr(attr->attname));
 					seqid = getIdentitySequence(rel, attnum + 1, false);
 					break;
 				}
@@ -5543,9 +5543,14 @@ pltsql_update_identity_insert_sequence(PLtsql_expr *expr)
 				/* Obtain the user identity column */
 				for (attnum = 0; attnum < tupdesc_ret->natts; attnum++)
 				{
-					Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum);
+					Form_pg_attribute attr = TupleDescAttr(tupdesc_ret, attnum);
 
-					/* Find by name since other attributes not defined */
+					/*
+					 * Find by name in the returned tuple since other
+					 * attributes not defined. The relation descriptor cannot
+					 * be used here because it also contains dropped columns,
+					 * which shifts the attribute positions.
+					 */
 					if (strcmp(NameStr(attr->attname), id_attname) == 0)
 					{
 						int			tup_idx;
