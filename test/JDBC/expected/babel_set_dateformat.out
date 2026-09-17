@@ -1,0 +1,173 @@
+-- SET DATEFORMAT defines how date strings are interpreted
+SELECT CAST('12/31/2030' AS DATETIME)
+GO
+~~START~~
+datetime
+2030-12-31 00:00:00.0
+~~END~~
+
+
+SELECT CAST('31.12.2030' AS DATETIME)
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: date/time field value out of range: "31.12.2030")~~
+
+
+SET DATEFORMAT dmy
+GO
+
+SELECT CAST('31.12.2030' AS DATETIME), CAST('01.02.2030' AS SMALLDATETIME), CAST('31/12/2030 10:11' AS DATETIME2(0)), CAST('31-12-2030' AS DATE)
+GO
+~~START~~
+datetime#!#smalldatetime#!#datetime2#!#date
+2030-12-31 00:00:00.0#!#2030-02-01 00:00:00.0#!#2030-12-31 10:11:00#!#2030-12-31
+~~END~~
+
+
+-- formats that do not depend on DATEFORMAT
+SELECT CAST('2030-12-31' AS DATE), CAST('20301231' AS DATETIME), CAST('2030-12-31T10:11:12' AS DATETIME)
+GO
+~~START~~
+date#!#datetime#!#datetime
+2030-12-31#!#2030-12-31 00:00:00.0#!#2030-12-31 10:11:12.0
+~~END~~
+
+
+SELECT CAST('12/31/2030' AS DATETIME)
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: date/time field value out of range: "12/31/2030")~~
+
+
+SELECT ISDATE('31.12.2030'), ISDATE('12/31/2030')
+GO
+~~START~~
+int#!#int
+1#!#0
+~~END~~
+
+
+SELECT CONVERT(VARCHAR(10), CAST('05.06.2030' AS DATETIME), 104), MONTH(CAST('05.06.2030' AS DATE)), DATEADD(day, 1, CAST('28.02.2024' AS DATETIME))
+GO
+~~START~~
+varchar#!#int#!#datetime
+05.06.2030#!#6#!#2024-02-29 00:00:00.0
+~~END~~
+
+
+-- default values of parameters
+CREATE FUNCTION babel_set_dateformat_f1 (@von SMALLDATETIME = '01.01.1900', @bis SMALLDATETIME = '31.12.2030') RETURNS INT AS
+BEGIN
+    RETURN DATEDIFF(day, @von, @bis)
+END
+GO
+
+SELECT dbo.babel_set_dateformat_f1(DEFAULT, DEFAULT)
+GO
+~~START~~
+int
+47846
+~~END~~
+
+
+-- string literal and other formats
+SET DATEFORMAT 'ymd'
+GO
+
+SELECT CAST('30/12/31' AS DATE)
+GO
+~~START~~
+date
+2030-12-31
+~~END~~
+
+
+SET DATEFORMAT MDY
+GO
+
+SELECT CAST('12/31/2030' AS DATETIME), MONTH(CAST('05.06.2030' AS DATE))
+GO
+~~START~~
+datetime#!#int
+2030-12-31 00:00:00.0#!#5
+~~END~~
+
+
+SELECT dbo.babel_set_dateformat_f1(DEFAULT, DEFAULT)
+GO
+~~START~~
+int
+47846
+~~END~~
+
+
+-- inside a procedure the setting is reverted at the end like other SET options
+CREATE PROCEDURE babel_set_dateformat_p1 AS
+BEGIN
+    SET DATEFORMAT dmy
+    SELECT MONTH(CAST('05.06.2030' AS DATE))
+END
+GO
+
+EXEC babel_set_dateformat_p1
+GO
+~~START~~
+int
+6
+~~END~~
+
+
+SELECT MONTH(CAST('05.06.2030' AS DATE))
+GO
+~~START~~
+int
+5
+~~END~~
+
+
+-- ydm, myd and dym have no equivalent and stay under the escape hatch
+SET DATEFORMAT ydm
+GO
+
+SELECT MONTH(CAST('05.06.2030' AS DATE))
+GO
+~~START~~
+int
+6
+~~END~~
+
+
+EXEC sp_babelfish_configure 'babelfishpg_tsql.escape_hatch_session_settings', 'strict'
+GO
+
+SET DATEFORMAT ydm
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: 'DATEFORMAT' is not currently supported in Babelfish. please use babelfishpg_tsql.escape_hatch_session_settings to ignore)~~
+
+
+SET DATEFORMAT dmy
+GO
+
+SELECT MONTH(CAST('05.06.2030' AS DATE))
+GO
+~~START~~
+int
+6
+~~END~~
+
+
+EXEC sp_babelfish_configure 'babelfishpg_tsql.escape_hatch_session_settings', 'ignore'
+GO
+
+SET DATEFORMAT mdy
+GO
+
+DROP PROCEDURE babel_set_dateformat_p1
+GO
+
+DROP FUNCTION babel_set_dateformat_f1
+GO
