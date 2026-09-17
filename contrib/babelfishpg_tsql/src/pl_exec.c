@@ -5460,6 +5460,7 @@ pltsql_update_identity_insert_sequence(PLtsql_expr *expr)
 			TupleDesc	tupdesc;
 			AttrNumber	attnum;
 			char	   *id_attname = NULL;
+			AttrNumber	id_ret_attnum = 0;
 			Oid			seqid = InvalidOid;
 			SPITupleTable *tuptable = SPI_tuptable;
 			uint64		n_processed = SPI_processed;
@@ -5519,12 +5520,17 @@ pltsql_update_identity_insert_sequence(PLtsql_expr *expr)
 			{
 				Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum);
 
+				/* RETURNING * does not contain dropped columns */
+				if (attr->attisdropped)
+					continue;
+
 				if (attr->attidentity)
 				{
-					id_attname = NameStr(attr->attname);
+					id_attname = pstrdup(NameStr(attr->attname));
 					seqid = getIdentitySequence(rel, attnum + 1, false);
 					break;
 				}
+				id_ret_attnum++;
 			}
 
 			RelationClose(rel);
@@ -5543,10 +5549,14 @@ pltsql_update_identity_insert_sequence(PLtsql_expr *expr)
 				/* Obtain the user identity column */
 				for (attnum = 0; attnum < tupdesc_ret->natts; attnum++)
 				{
-					Form_pg_attribute attr = TupleDescAttr(tupdesc, attnum);
-
-					/* Find by name since other attributes not defined */
-					if (strcmp(NameStr(attr->attname), id_attname) == 0)
+					/*
+					 * Find the identity column by its position among the
+					 * columns that are not dropped. The position in the
+					 * relation descriptor cannot be used because it counts
+					 * dropped columns, and the column names of the returned
+					 * tuple can differ in case from the attribute name.
+					 */
+					if (attnum == id_ret_attnum)
 					{
 						int			tup_idx;
 						int64		seq_incr = 0;
