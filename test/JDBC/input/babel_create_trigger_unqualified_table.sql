@@ -1,0 +1,69 @@
+-- CREATE TRIGGER with a schema-qualified trigger name and a target table
+-- given without schema
+CREATE TABLE babel_create_trigger_unq_t1 (id INT NOT NULL)
+GO
+
+CREATE SCHEMA babel_create_trigger_unq_s1
+GO
+
+CREATE TABLE babel_create_trigger_unq_s1.babel_create_trigger_unq_t2 (id INT NOT NULL)
+GO
+
+-- the table resolves to dbo, which is the schema of the trigger
+CREATE TRIGGER dbo.babel_create_trigger_unq_tr1 ON babel_create_trigger_unq_t1 AFTER DELETE AS
+BEGIN
+    SELECT 'tr1 fired'
+END
+GO
+
+CREATE TRIGGER [DBO].[babel_create_trigger_unq_tr2] ON [babel_create_trigger_unq_t1] AFTER INSERT AS
+BEGIN
+    SELECT 'tr2 fired'
+END
+GO
+
+INSERT INTO babel_create_trigger_unq_t1 VALUES (1)
+GO
+
+DELETE FROM babel_create_trigger_unq_t1
+GO
+
+SELECT s.name, tr.name, OBJECT_NAME(tr.parent_id) FROM sys.triggers tr JOIN sys.objects o ON o.object_id = tr.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id
+WHERE tr.name LIKE 'babel_create_trigger_unq%' ORDER BY tr.name
+GO
+
+-- the table resolves to dbo, the trigger is in another schema
+CREATE TRIGGER babel_create_trigger_unq_s1.babel_create_trigger_unq_tr3 ON babel_create_trigger_unq_t1 AFTER DELETE AS
+BEGIN
+    SELECT 'tr3 fired'
+END
+GO
+
+-- the table does not exist in dbo
+CREATE TRIGGER babel_create_trigger_unq_s1.babel_create_trigger_unq_tr4 ON babel_create_trigger_unq_t2 AFTER DELETE AS
+BEGIN
+    SELECT 'tr4 fired'
+END
+GO
+
+CREATE TRIGGER dbo.babel_create_trigger_unq_tr5 ON babel_create_trigger_unq_nothing AFTER DELETE AS
+BEGIN
+    SELECT 'tr5 fired'
+END
+GO
+
+-- DROP with the qualified name
+DROP TRIGGER dbo.babel_create_trigger_unq_tr1
+GO
+
+DROP TRIGGER dbo.babel_create_trigger_unq_tr2
+GO
+
+DROP TABLE babel_create_trigger_unq_s1.babel_create_trigger_unq_t2
+GO
+
+DROP SCHEMA babel_create_trigger_unq_s1
+GO
+
+DROP TABLE babel_create_trigger_unq_t1
+GO

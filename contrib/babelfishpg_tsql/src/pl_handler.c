@@ -833,6 +833,26 @@ pltsql_pre_parse_analyze(ParseState *pstate, RawStmt *parseTree)
 				if (trigStmt->args != NIL)
 				{
 					trig_schema = ((String *) list_nth(((CreateTrigStmt *) trigStmt)->args, 0))->sval;
+
+					/*
+					 * The target table can be given without schema. Look up
+					 * the schema it resolves to, so that it can be compared
+					 * with the schema of the trigger.
+					 */
+					if (trigStmt->relation->schemaname == NULL)
+					{
+						Oid			target_relid = RangeVarGetRelid(trigStmt->relation, NoLock, true);
+
+						if (OidIsValid(target_relid))
+						{
+							char	   *physical_schema = get_namespace_name(get_rel_namespace(target_relid));
+							const char *logical_schema = get_logical_schema_name(physical_schema, true);
+
+							if (logical_schema != NULL)
+								trigStmt->relation->schemaname = pstrdup(logical_schema);
+						}
+					}
+
 					if ((trigStmt->relation->schemaname != NULL && strcasecmp(trig_schema, trigStmt->relation->schemaname) != 0)
 						|| trigStmt->relation->schemaname == NULL)
 					{
