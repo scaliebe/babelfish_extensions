@@ -400,6 +400,7 @@ BABEL_OBJECT_NAME
 sys-systypes-before-16-2
 BABEL_OBJECT_DEFINITION_before_16_5
 Test-sp_rename
+babel_sp_rename_default_objtype
 Test-sp_rename-dep
 BABEL-3657
 BABEL-733

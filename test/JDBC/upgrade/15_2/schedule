@@ -403,6 +403,7 @@ Test-sp_helprolemember-dep
 Test-sp_helpsrvrolemember
 Test-sp_helpuser
 Test-sp_rename
+babel_sp_rename_default_objtype
 Test-sp_rename-dep
 Test-sp_set_session_context
 Test-sp_set_session_context-dep

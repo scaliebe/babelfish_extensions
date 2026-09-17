@@ -157,7 +157,7 @@ FROM sys.babelfish_view_def WHERE object_name LIKE '%sp_rename_vu%'
 ORDER BY schema_name, object_name
 GO
 
--- Null input for objtype: Error temporarily, as only OBJECT type is supported
+-- Null input for objtype: the type is derived from objname, which does not exist here
 EXEC sp_rename 'sp_rename_vu_view1_new', 'sp_rename_vu_view1';
 GO
 

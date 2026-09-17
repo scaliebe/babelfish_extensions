@@ -3209,9 +3209,62 @@ BEGIN
 	SET @objtype = sys.TRIM(@objtype);
 	If @objtype IS NULL
 		BEGIN
-			THROW 33557097, N'Please provide @objtype that is supported in Babelfish', 1;
+			-- No @objtype given: find out what @objname refers to. It can be an
+			-- object, a column or an index of an object, or a user defined type.
+			DECLARE @match_count INT = 0;
+			DECLARE @parent_name sys.nvarchar(776) = NULL;
+			DECLARE @parent_id INT = NULL;
+
+			IF OBJECT_ID(@objname) IS NOT NULL
+				BEGIN
+					SET @objtype = 'OBJECT';
+					SET @match_count = @match_count + 1;
+				END
+
+			IF PARSENAME(@objname, 2) IS NOT NULL
+				BEGIN
+					SET @parent_name = QUOTENAME(PARSENAME(@objname, 2));
+					IF PARSENAME(@objname, 4) IS NOT NULL
+						SET @parent_name = QUOTENAME(PARSENAME(@objname, 4)) + '.' + ISNULL(QUOTENAME(PARSENAME(@objname, 3)), '') + '.' + @parent_name;
+					ELSE IF PARSENAME(@objname, 3) IS NOT NULL
+						SET @parent_name = QUOTENAME(PARSENAME(@objname, 3)) + '.' + @parent_name;
+					SET @parent_id = OBJECT_ID(@parent_name);
+				END
+
+			IF @parent_id IS NOT NULL
+				BEGIN
+					IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = @parent_id AND name = PARSENAME(@objname, 1))
+						BEGIN
+							SET @objtype = 'COLUMN';
+							SET @match_count = @match_count + 1;
+						END
+					IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = @parent_id AND name = PARSENAME(@objname, 1))
+						BEGIN
+							SET @objtype = 'INDEX';
+							SET @match_count = @match_count + 1;
+						END
+				END
+
+			IF PARSENAME(@objname, 3) IS NULL AND EXISTS (SELECT 1 FROM sys.types t1 INNER JOIN sys.schemas s1 ON t1.schema_id = s1.schema_id
+					WHERE t1.is_user_defined = 1 AND t1.is_table_type = 0 AND t1.name = PARSENAME(@objname, 1)
+					AND s1.name = ISNULL(PARSENAME(@objname, 2), sys.schema_name()))
+				BEGIN
+					SET @objtype = 'USERDATATYPE';
+					SET @match_count = @match_count + 1;
+				END
+
+			IF @match_count > 1
+				BEGIN
+					THROW 33557097, N'Either the parameter @objname is ambiguous or the claimed @objtype ((null)) is wrong.', 1;
+				END
+
+			-- Everything else is handled as an object, which also reports
+			-- the error if there is no such object.
+			IF @match_count = 0
+				SET @objtype = 'OBJECT';
 		END
-	ELSE IF @objtype = 'STATISTICS'
+
+	IF @objtype = 'STATISTICS'
 		BEGIN
 			THROW 33557097, N'Feature not supported: renaming object type Statistics', 1;
 		END
