@@ -1,5 +1,7 @@
 #include "postgres.h"
 
+#include "catalog/namespace.h"
+#include "catalog/pg_proc.h"
 #include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "nodes/parsenodes.h"
@@ -11,7 +13,9 @@
 #include "pltsql.h"
 #include "utils/acl.h"
 #include "utils/builtins.h"
+#include "utils/catcache.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 #include "catalog.h"
@@ -26,7 +30,8 @@ static void rewrite_schema_name(String *schema);
 static void rewrite_role_name(RoleSpec *role);
 
 static void rewrite_rangevar_list(List *rvs);	/* list of RangeVars */
-static void rewrite_objectwithargs_list(List *objs);	/* list of
+static void rewrite_objectwithargs_list(List *objs);
+static void qualify_routine_names_with_user_schema(List *objs);	/* list of
 														 * ObjectWithArgs */
 static void rewrite_plain_name_list(List *names);	/* list of plan names */
 static void rewrite_schema_name_list(List *schemas);	/* list of schema names */
@@ -426,6 +431,7 @@ rewrite_object_refs(Node *stmt)
 					case OBJECT_PROCEDURE:
 						{
 							rewrite_objectwithargs_list(drop->objects);
+							qualify_routine_names_with_user_schema(drop->objects);
 							break;
 						}
 					default:
@@ -946,6 +952,87 @@ rewrite_rangevar(RangeVar *rv)
 
 			rv->schemaname = get_physical_schema_name(cur_db, rv->schemaname);
 		}
+	}
+}
+
+/*
+ * T-SQL gives no argument list when a routine is dropped, so the lookup along
+ * the search path considers every routine of that name, including the system
+ * routines in the shared schemas. A user routine whose name matches a system
+ * routine (e.g. dbo.concat) then cannot be dropped without schema name: the
+ * statement fails with "function name is not unique". Qualify the name with
+ * the first non-shared schema of the search path that contains a routine of
+ * this name. Names that do not collide with a routine in a shared schema are
+ * left as they are, so nothing changes for them.
+ */
+static void
+qualify_routine_names_with_user_schema(List *objs)
+{
+	ListCell   *cell;
+
+	foreach(cell, objs)
+	{
+		ObjectWithArgs *obj = (ObjectWithArgs *) lfirst(cell);
+		char	   *routine_name;
+		List	   *search_path;
+		ListCell   *lc;
+		CatCList   *catlist;
+		char	   *user_schema = NULL;
+		bool		in_shared_schema = false;
+		int			i;
+
+		if (list_length(obj->objname) != 1)
+			continue;
+
+		routine_name = strVal(linitial(obj->objname));
+		catlist = SearchSysCacheList1(PROCNAMEARGSNSP, CStringGetDatum(routine_name));
+
+		for (i = 0; i < catlist->n_members; i++)
+		{
+			Form_pg_proc procform = (Form_pg_proc) GETSTRUCT(&catlist->members[i]->tuple);
+			char	   *nspname = get_namespace_name(procform->pronamespace);
+
+			if (nspname != NULL && is_shared_schema(nspname))
+			{
+				in_shared_schema = true;
+				break;
+			}
+		}
+
+		if (in_shared_schema)
+		{
+			search_path = fetch_search_path(false);
+
+			foreach(lc, search_path)
+			{
+				Oid			nspoid = lfirst_oid(lc);
+				char	   *nspname = get_namespace_name(nspoid);
+
+				if (nspname == NULL || is_shared_schema(nspname))
+					continue;
+
+				for (i = 0; i < catlist->n_members; i++)
+				{
+					Form_pg_proc procform = (Form_pg_proc) GETSTRUCT(&catlist->members[i]->tuple);
+
+					if (procform->pronamespace == nspoid)
+					{
+						user_schema = nspname;
+						break;
+					}
+				}
+
+				if (user_schema != NULL)
+					break;
+			}
+
+			list_free(search_path);
+		}
+
+		if (user_schema != NULL)
+			obj->objname = list_make2(makeString(user_schema), makeString(routine_name));
+
+		ReleaseSysCacheList(catlist);
 	}
 }
 
