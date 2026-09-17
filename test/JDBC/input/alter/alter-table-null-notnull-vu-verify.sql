@@ -278,7 +278,7 @@ CREATE TABLE products_weak (
 );
 GO
 
--- Weak binding view will also error if base table column type is changed
+-- Weak binding view does not prevent the type change of a base table column
 EXEC sp_babelfish_configure 'babelfishpg_tsql.weak_view_binding', 'on';
 GO
 
@@ -289,7 +289,7 @@ GO
 EXEC sp_babelfish_configure 'babelfishpg_tsql.weak_view_binding', 'off';
 GO
 
---[ERROR] Attempting to alter base table column type used in weak view
+-- [SUCCESS] Attempting to alter base table column type used in weak view
 ALTER TABLE products_weak ALTER COLUMN price DECIMAL(12,4) NOT NULL;
 GO
 

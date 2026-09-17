@@ -9,6 +9,7 @@
 #include "access/reloptions.h"
 #include "access/stratnum.h"
 #include "access/table.h"
+#include "access/toast_compression.h"
 #include "access/transam.h"
 #include "access/xact.h"
 #include "catalog/catalog.h"
@@ -21,6 +22,8 @@
 #include "catalog/pg_attrdef.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_constraint.h"
+#include "catalog/indexing.h"
+#include "catalog/pg_collation.h"
 #include "catalog/pg_database.h"
 #include "catalog/pg_db_role_setting.h"
 #include "catalog/pg_depend.h"	/* Required in handle_bbf_view_binding_on_object_drop to access pg_rewrite dependencies */
@@ -318,6 +321,7 @@ static bool bbf_view_set_broken(Oid viewOid, bool mark_broken);
 static void find_all_view_references(Node *node, List **view_oids);
 static Query *create_dummy_view_query_for_broken_view(Oid viewOid);
 static bool repair_broken_view_recursive(Oid viewOid, List *visitedViews);
+static void sync_view_column_types(Oid viewOid, List *targetList);
 static bool is_dummy_view(Oid viewOid);
 static bool update_bbf_view_flags(Oid viewOid, uint64 flags_to_set, uint64 flags_to_clear, bool update_validity);
 static Oid get_view_oid_from_rule(Oid ruleOid);
@@ -8526,6 +8530,156 @@ is_dummy_view(Oid viewOid)
 }
 
 /*
+ * Bring the column types of a broken view in line with its definition
+ *
+ * A broken view is repaired by replacing its query, which requires that the
+ * data type, typmod and collation of the existing view columns stay the
+ * same. They differ when the type of an underlying column has been altered in
+ * the meantime. The broken view has a dummy query and the views depending on
+ * the affected column are marked as broken here as well, so nothing refers
+ * to the old column type anymore and it can be replaced in pg_attribute.
+ *
+ * If a dependent view cannot be marked as broken, the column is left as it
+ * is and replacing the view query reports the type mismatch.
+ *
+ * Parameters:
+ * - viewOid: OID of the broken view
+ * - targetList: target list of the analyzed view definition
+ */
+static void
+sync_view_column_types(Oid viewOid, List *targetList)
+{
+	Relation	attrelation;
+	ListCell   *lc;
+	AttrNumber	attnum = 0;
+	bool		changed = false;
+
+	attrelation = table_open(AttributeRelationId, RowExclusiveLock);
+
+	foreach(lc, targetList)
+	{
+		TargetEntry *tle = (TargetEntry *) lfirst(lc);
+		HeapTuple	atttup;
+		HeapTuple	typtup;
+		HeapTuple	deptup;
+		Form_pg_attribute attform;
+		Form_pg_type typform;
+		Oid			typid;
+		int32		typmod;
+		Oid			collid;
+		ObjectAddress column;
+		ObjectAddress referenced;
+		Relation	depRel;
+		ScanKeyData key[3];
+		SysScanDesc scan;
+
+		if (tle->resjunk)
+			continue;
+
+		attnum++;
+		atttup = SearchSysCacheCopyAttNum(viewOid, attnum);
+
+		/* Additional columns are added when the view query is replaced */
+		if (!HeapTupleIsValid(atttup))
+			break;
+
+		attform = (Form_pg_attribute) GETSTRUCT(atttup);
+		typid = exprType((Node *) tle->expr);
+		typmod = exprTypmod((Node *) tle->expr);
+		collid = exprCollation((Node *) tle->expr);
+
+		if (attform->atttypid == typid &&
+			attform->atttypmod == typmod &&
+			attform->attcollation == collid)
+		{
+			heap_freetuple(atttup);
+			continue;
+		}
+
+		/* Views using this column still refer to the old type */
+		column.classId = RelationRelationId;
+		column.objectId = viewOid;
+		column.objectSubId = attnum;
+		if (!handle_bbf_view_binding_on_object_drop(&column, true))
+		{
+			heap_freetuple(atttup);
+			continue;
+		}
+
+		/* Remove the dependencies on the old type and collation */
+		depRel = table_open(DependRelationId, RowExclusiveLock);
+		ScanKeyInit(&key[0],
+					Anum_pg_depend_classid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(RelationRelationId));
+		ScanKeyInit(&key[1],
+					Anum_pg_depend_objid,
+					BTEqualStrategyNumber, F_OIDEQ,
+					ObjectIdGetDatum(viewOid));
+		ScanKeyInit(&key[2],
+					Anum_pg_depend_objsubid,
+					BTEqualStrategyNumber, F_INT4EQ,
+					Int32GetDatum((int32) attnum));
+		scan = systable_beginscan(depRel, DependDependerIndexId, true,
+								  NULL, 3, key);
+		while (HeapTupleIsValid(deptup = systable_getnext(scan)))
+		{
+			Form_pg_depend depform = (Form_pg_depend) GETSTRUCT(deptup);
+
+			if (depform->deptype == DEPENDENCY_NORMAL &&
+				(depform->refclassid == TypeRelationId ||
+				 depform->refclassid == CollationRelationId))
+				CatalogTupleDelete(depRel, &deptup->t_self);
+		}
+		systable_endscan(scan);
+		table_close(depRel, RowExclusiveLock);
+
+		typtup = SearchSysCache1(TYPEOID, ObjectIdGetDatum(typid));
+		if (!HeapTupleIsValid(typtup))
+			elog(ERROR, "cache lookup failed for type %u", typid);
+		typform = (Form_pg_type) GETSTRUCT(typtup);
+
+		attform->atttypid = typid;
+		attform->atttypmod = typmod;
+		attform->attcollation = collid;
+		attform->attlen = typform->typlen;
+		attform->attbyval = typform->typbyval;
+		attform->attalign = typform->typalign;
+		attform->attstorage = typform->typstorage;
+		attform->attcompression = InvalidCompressionMethod;
+		attform->attndims = (typform->typelem != InvalidOid && typform->typlen == -1) ? 1 : 0;
+		ReleaseSysCache(typtup);
+
+		CatalogTupleUpdate(attrelation, &atttup->t_self, atttup);
+		heap_freetuple(atttup);
+
+		/* Record the dependencies on the new type and collation */
+		referenced.classId = TypeRelationId;
+		referenced.objectId = typid;
+		referenced.objectSubId = 0;
+		recordDependencyOn(&column, &referenced, DEPENDENCY_NORMAL);
+
+		if (OidIsValid(collid) && collid != DEFAULT_COLLATION_OID)
+		{
+			referenced.classId = CollationRelationId;
+			referenced.objectId = collid;
+			referenced.objectSubId = 0;
+			recordDependencyOn(&column, &referenced, DEPENDENCY_NORMAL);
+		}
+
+		changed = true;
+	}
+
+	table_close(attrelation, RowExclusiveLock);
+
+	if (changed)
+	{
+		CacheInvalidateRelcacheByRelid(viewOid);
+		CommandCounterIncrement();
+	}
+}
+
+/*
  * Repair a broken view and all views it depend on
  *
  * This function repairs a view that has become broken due to underlying objects
@@ -8552,6 +8706,7 @@ repair_broken_view_recursive(Oid viewOid, List *visitedViews)
 	Query 			*query = NULL;
 	Query 			*currentQuery = NULL;
 	bool 			repaired = false;
+	bool 			was_broken = false;
 	bool 			snapshot_registered = false;
 	char 			*schema_name = NULL; 
 	char 			*viewdef = NULL;
@@ -8574,6 +8729,7 @@ repair_broken_view_recursive(Oid viewOid, List *visitedViews)
 	/* Check if the view is a dummy view and do repair */
 	if (is_dummy_view(viewOid) && bbf_view_is_broken(viewOid))
 	{	
+		was_broken = true;
 		if (!ActiveSnapshotSet())
 		{
 			PushActiveSnapshot(GetTransactionSnapshot());
@@ -8662,6 +8818,10 @@ repair_broken_view_recursive(Oid viewOid, List *visitedViews)
 		{
 			rangevar = copyObject(viewStmt->view);
 			rangevar->schemaname = schema_name;
+
+			/* The type of an underlying column may have been altered */
+			sync_view_column_types(viewOid, query->targetList);
+
 			address = bbf_define_virtual_relation(rangevar, query->targetList, true, viewStmt->options, query);
 
 			if (OidIsValid(address.objectId))
@@ -8695,6 +8855,18 @@ repair_broken_view_recursive(Oid viewOid, List *visitedViews)
 
 	if (repaired)
 		CommandCounterIncrement();
+
+	/*
+	 * Repairing a referenced view can change its column types, which marks
+	 * this view as broken. Repair it right away so that the current query
+	 * does not see the dummy definition.
+	 */
+	if (!was_broken && is_dummy_view(viewOid) && bbf_view_is_broken(viewOid))
+	{
+		visitedViews = list_delete_oid(visitedViews, viewOid);
+		if (repair_broken_view_recursive(viewOid, visitedViews))
+			repaired = true;
+	}
 	return repaired;
 }
 
