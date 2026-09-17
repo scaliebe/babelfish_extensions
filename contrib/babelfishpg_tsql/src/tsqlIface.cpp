@@ -8131,6 +8131,17 @@ static void post_process_merge_statement(TSqlParser::Merge_statementContext *mct
 				std::make_pair(mergeTok, repl)));
 	}
 
+	/*
+	 * The column on the right side of a rewritten compound assignment has to
+	 * be qualified with the target, otherwise it is ambiguous if the source
+	 * has a column of the same name.
+	 */
+	std::string targetQualifier;
+	if (mctx->as_table_alias() && mctx->as_table_alias()->table_alias())
+		targetQualifier = ::getFullText(mctx->as_table_alias()->table_alias());
+	else if (mctx->ddl_object() && mctx->ddl_object()->full_object_name() && mctx->ddl_object()->full_object_name()->object_name)
+		targetQualifier = ::getFullText(mctx->ddl_object()->full_object_name()->object_name);
+
 	for (auto wctx : mctx->when_matches())
 	{
 		if (wctx->merge_matched() && wctx->merge_matched()->UPDATE())
@@ -8155,7 +8166,7 @@ static void post_process_merge_statement(TSqlParser::Merge_statementContext *mct
 					std::string opText = ::getFullText(op);
 					std::string opchar = opText.substr(0, opText.size() - 1);
 					rewritten_query_fragment.emplace(std::make_pair(op->start->getStartIndex(),
-						std::make_pair(opText, std::string("= ") + colText + " " + opchar + " (")));
+						std::make_pair(opText, std::string("= ") + (targetQualifier.empty() ? "" : targetQualifier + ".") + colText + " " + opchar + " (")));
 					rewritten_query_fragment.emplace(std::make_pair(elem->expression()->stop->getStopIndex() + 1,
 						std::make_pair("", ")")));
 				}
