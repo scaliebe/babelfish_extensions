@@ -165,6 +165,26 @@ WHEN MATCHED THEN UPDATE SET t.qty += s.bump;
 SELECT qty FROM babel_2920_t WHERE id = 3
 go
 
+-- compound assignment when the source has a column of the same name
+MERGE babel_2920_t AS t
+USING (SELECT 3 AS id, 2 AS qty) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET t.qty += s.qty;
+SELECT qty FROM babel_2920_t WHERE id = 3
+go
+
+MERGE babel_2920_t AS t
+USING (SELECT 3 AS id, 2 AS qty) AS s ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty *= 2;
+SELECT qty FROM babel_2920_t WHERE id = 3
+go
+
+-- without an alias for the target
+MERGE INTO babel_2920_t
+USING (SELECT 3 AS id, 4 AS qty) AS s ON babel_2920_t.id = s.id
+WHEN MATCHED THEN UPDATE SET qty -= s.qty;
+SELECT qty FROM babel_2920_t WHERE id = 3
+go
+
 -- OPTION query hints: join hints and general hints
 CREATE TABLE babel_2920_opt_t (id INT PRIMARY KEY, hits INT NOT NULL)
 go
