@@ -1,0 +1,26 @@
+DROP TABLE babel_sp_rename_default_objtype_amb
+GO
+
+DROP TABLE babel_sp_rename_default_objtype_amb.babel_sp_rename_default_objtype_amb_new
+GO
+
+DROP SCHEMA babel_sp_rename_default_objtype_amb
+GO
+
+DROP TABLE babel_sp_rename_default_objtype_s1.babel_sp_rename_default_objtype_t2_new
+GO
+
+DROP SCHEMA babel_sp_rename_default_objtype_s1
+GO
+
+DROP TYPE babel_sp_rename_default_objtype_ty1_new
+GO
+
+DROP PROCEDURE babel_sp_rename_default_objtype_p1_new
+GO
+
+DROP VIEW babel_sp_rename_default_objtype_v1_new
+GO
+
+DROP TABLE babel_sp_rename_default_objtype_t1_new
+GO

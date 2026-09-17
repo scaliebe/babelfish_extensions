@@ -4080,6 +4080,202 @@ $$
 LANGUAGE 'pltsql';
 GRANT EXECUTE on PROCEDURE sys.babelfish_sp_rename_word_parse(IN sys.nvarchar(776), IN sys.varchar(13), INOUT sys.nvarchar(776), INOUT sys.nvarchar(776), INOUT sys.nvarchar(776), INOUT sys.nvarchar(776)) TO PUBLIC;
 
+CREATE OR REPLACE PROCEDURE sys.sp_rename(
+	IN "@objname" sys.nvarchar(776) = NULL,
+	IN "@newname" sys.SYSNAME = NULL,
+	IN "@objtype" sys.varchar(13) DEFAULT NULL
+)
+LANGUAGE 'pltsql'
+AS $$
+BEGIN
+	SET @objtype = sys.TRIM(@objtype);
+	If @objtype IS NULL
+		BEGIN
+			-- No @objtype given: find out what @objname refers to. It can be an
+			-- object, a column or an index of an object, or a user defined type.
+			DECLARE @match_count INT = 0;
+			DECLARE @parent_name sys.nvarchar(776) = NULL;
+			DECLARE @parent_id INT = NULL;
+
+			IF OBJECT_ID(@objname) IS NOT NULL
+				BEGIN
+					SET @objtype = 'OBJECT';
+					SET @match_count = @match_count + 1;
+				END
+
+			IF PARSENAME(@objname, 2) IS NOT NULL
+				BEGIN
+					SET @parent_name = QUOTENAME(PARSENAME(@objname, 2));
+					IF PARSENAME(@objname, 4) IS NOT NULL
+						SET @parent_name = QUOTENAME(PARSENAME(@objname, 4)) + '.' + ISNULL(QUOTENAME(PARSENAME(@objname, 3)), '') + '.' + @parent_name;
+					ELSE IF PARSENAME(@objname, 3) IS NOT NULL
+						SET @parent_name = QUOTENAME(PARSENAME(@objname, 3)) + '.' + @parent_name;
+					SET @parent_id = OBJECT_ID(@parent_name);
+				END
+
+			IF @parent_id IS NOT NULL
+				BEGIN
+					IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = @parent_id AND name = PARSENAME(@objname, 1))
+						BEGIN
+							SET @objtype = 'COLUMN';
+							SET @match_count = @match_count + 1;
+						END
+					IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = @parent_id AND name = PARSENAME(@objname, 1))
+						BEGIN
+							SET @objtype = 'INDEX';
+							SET @match_count = @match_count + 1;
+						END
+				END
+
+			IF PARSENAME(@objname, 3) IS NULL AND EXISTS (SELECT 1 FROM sys.types t1 INNER JOIN sys.schemas s1 ON t1.schema_id = s1.schema_id
+					WHERE t1.is_user_defined = 1 AND t1.is_table_type = 0 AND t1.name = PARSENAME(@objname, 1)
+					AND s1.name = ISNULL(PARSENAME(@objname, 2), sys.schema_name()))
+				BEGIN
+					SET @objtype = 'USERDATATYPE';
+					SET @match_count = @match_count + 1;
+				END
+
+			IF @match_count > 1
+				BEGIN
+					THROW 33557097, N'Either the parameter @objname is ambiguous or the claimed @objtype ((null)) is wrong.', 1;
+				END
+
+			-- Everything else is handled as an object, which also reports
+			-- the error if there is no such object.
+			IF @match_count = 0
+				SET @objtype = 'OBJECT';
+		END
+
+	IF @objtype = 'STATISTICS'
+		BEGIN
+			THROW 33557097, N'Feature not supported: renaming object type Statistics', 1;
+		END
+	ELSE IF @objtype = 'DATABASE'
+		BEGIN
+			exec sys.sp_renamedb @objname, @newname;
+		END
+	ELSE
+		BEGIN
+			DECLARE @subname sys.nvarchar(776);
+			DECLARE @schemaname sys.nvarchar(776);
+			DECLARE @dbname sys.nvarchar(776);
+			DECLARE @curr_relname sys.nvarchar(776);
+			
+			EXEC sys.babelfish_sp_rename_word_parse @objname, @objtype, @subname OUT, @curr_relname OUT, @schemaname OUT, @dbname OUT;
+
+			DECLARE @currtype char(2);
+
+			IF @objtype = 'COLUMN'
+				BEGIN
+					DECLARE @col_count INT;
+					SELECT @col_count = COUNT(*)FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @curr_relname and COLUMN_NAME = @subname;
+					IF @col_count < 0
+						BEGIN
+							THROW 33557097, N'There is no object with the given @objname.', 1;
+						END
+					SET @currtype = 'CO';
+				END
+			ELSE IF @objtype = 'INDEX'
+				BEGIN
+					DECLARE @relid INT = 0;
+					DECLARE @index_count INT;
+					SELECT @relid = object_id FROM sys.objects o1 INNER JOIN sys.schemas s1 ON o1.schema_id = s1.schema_id 
+						WHERE s1.name = @schemaname AND o1.name = @curr_relname;
+					IF @relid = 0
+						BEGIN
+							THROW 33557097, N'There is no object with the given @objname.', 1;
+						END
+					SELECT @index_count = COUNT(*) FROM pg_index i JOIN pg_class c ON i.indexrelid = c.oid
+						WHERE i.indrelid = @relid AND c.relname = sys.babelfish_construct_unique_index_name(@subname, @curr_relname);
+					IF @index_count < 0
+						BEGIN
+							THROW 33557097, N'There is no object with the given @objname.', 1;
+						END
+					SET @currtype = 'IX';
+				END
+			ELSE IF @objtype = 'USERDATATYPE'
+				BEGIN
+					DECLARE @alias_count INT;
+					SELECT @alias_count = COUNT(*) FROM sys.types t1 INNER JOIN sys.schemas s1 ON t1.schema_id = s1.schema_id 
+					WHERE s1.name = @schemaname AND t1.name = @subname;
+					IF @alias_count > 1
+						BEGIN
+							THROW 33557097, N'There are multiple objects with the given @objname.', 1;
+						END
+					IF @alias_count < 1
+						BEGIN
+							THROW 33557097, N'There is no object with the given @objname.', 1;
+						END
+					SET @currtype = 'AL';				
+				END
+			ELSE IF @objtype = 'OBJECT'
+				BEGIN
+					DECLARE @count INT;
+					SELECT type INTO #tempTable FROM sys.objects o1 INNER JOIN sys.schemas s1 ON o1.schema_id = s1.schema_id 
+					WHERE s1.name = @schemaname AND (o1.name = @subname OR o1.object_id = OBJECT_ID(sys.babelfish_truncate_identifier(pg_catalog.lower(@schemaname)) + '.' + sys.babelfish_truncate_identifier(pg_catalog.lower(@subname))));
+					SELECT @count = COUNT(*) FROM #tempTable;
+
+					IF @count < 1
+						BEGIN
+							-- sys.objects does not show routines which current user cannot execute but
+							-- roles like db_ddladmin allow renaming a procedure even though they cannot
+							-- execute it, so search again in pg_proc if count is zero
+							DROP TABLE #tempTable;
+							SELECT CAST(CASE 
+											WHEN p.prokind = 'p' THEN 'P'
+											WHEN p.prokind = 'a' THEN 'AF'
+											WHEN format_type(p.prorettype, NULL) = 'trigger' THEN 'TR'
+											ELSE 'FN'
+										END as sys.bpchar(2)) AS type INTO #tempTable
+							FROM pg_proc p INNER JOIN sys.schemas s1 ON p.pronamespace = s1.schema_id
+							WHERE s1.name = @schemaname AND CAST(p.proname AS sys.sysname) = sys.babelfish_truncate_identifier(pg_catalog.lower(@subname));
+							SELECT @count = COUNT(*) FROM #tempTable;
+						END
+					IF @count > 1
+						BEGIN
+							THROW 33557097, N'There are multiple objects with the given @objname.', 1;
+						END
+					IF @count < 1
+						BEGIN
+							-- TABLE TYPE: check if there is a match in sys.table_types (if we cannot alter sys.objects table_type naming)
+							SELECT @count = COUNT(*) FROM sys.table_types tt1 INNER JOIN sys.schemas s1 ON tt1.schema_id = s1.schema_id 
+							WHERE s1.name = @schemaname AND tt1.name = @subname;
+							IF @count > 1
+								BEGIN
+									THROW 33557097, N'There are multiple objects with the given @objname.', 1;
+								END
+							ELSE IF @count < 1
+								BEGIN
+									THROW 33557097, N'There is no object with the given @objname.', 1;
+								END
+							ELSE
+								BEGIN
+									SET @currtype = 'TT'
+								END
+						END
+					IF @currtype IS NULL
+						BEGIN
+							SELECT @currtype = type from #tempTable;
+						END
+					IF @currtype = 'TR' OR @currtype = 'TA'
+						BEGIN
+							DECLARE @physical_schema_name sys.nvarchar(776) = '';
+							SELECT @physical_schema_name = nspname FROM sys.babelfish_namespace_ext WHERE dbid = sys.db_id() AND orig_name = @schemaname;
+							SELECT @curr_relname = relname FROM pg_catalog.pg_trigger tr LEFT JOIN pg_catalog.pg_class c ON tr.tgrelid = c.oid LEFT JOIN pg_catalog.pg_namespace n ON c.relnamespace = n.oid 
+							WHERE tr.tgname = @subname AND n.nspname = @physical_schema_name;
+						END
+				END
+			ELSE
+				BEGIN
+					THROW 33557097, N'Provided @objtype is not currently supported in Babelfish', 1;
+				END
+			EXEC sys.babelfish_sp_rename_internal @subname, @newname, @schemaname, @currtype, @curr_relname;
+			PRINT 'Caution: Changing any part of an object name could break scripts and stored procedures.';
+		END
+END;
+$$;
+GRANT EXECUTE on PROCEDURE sys.sp_rename(IN sys.nvarchar(776), IN sys.SYSNAME, IN sys.varchar(13)) TO PUBLIC;
+
 -- Recreate sys.sp_changedbowner (uses bbf_cur_db)
 CREATE OR REPLACE PROCEDURE sys.sp_changedbowner(
 	IN "@loginame" sys.sysname,
