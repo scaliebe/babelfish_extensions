@@ -1,0 +1,102 @@
+-- sys.sp_procedure_params_100_rowset is used by OLE DB providers to derive
+-- the parameters of a procedure
+EXEC sys.sp_procedure_params_100_rowset N'babel_sp_proc_params_rowset_p1', 1, N'dbo', NULL
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@RETURN_VALUE#!#0#!#4#!#0#!#<NULL>#!#0#!#3#!#<NULL>#!#<NULL>#!#10#!#<NULL>#!#<NULL>#!#int#!#int#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@a#!#1#!#1#!#0#!#<NULL>#!#1#!#3#!#<NULL>#!#<NULL>#!#10#!#<NULL>#!#<NULL>#!#int#!#int#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@b#!#2#!#1#!#0#!#<NULL>#!#1#!#129#!#20#!#20#!#<NULL>#!#<NULL>#!#<NULL>#!#varchar#!#varchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@c#!#3#!#2#!#0#!#<NULL>#!#1#!#130#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#nvarchar#!#nvarchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@d#!#4#!#1#!#0#!#<NULL>#!#1#!#131#!#<NULL>#!#<NULL>#!#10#!#2#!#<NULL>#!#decimal#!#decimal#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@e#!#5#!#1#!#0#!#<NULL>#!#1#!#135#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#datetime#!#datetime#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#3
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@f#!#6#!#1#!#0#!#<NULL>#!#1#!#11#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#bit#!#bit#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@g#!#7#!#1#!#0#!#<NULL>#!#1#!#72#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#uniqueidentifier#!#uniqueidentifier#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@h#!#8#!#1#!#0#!#<NULL>#!#1#!#128#!#50#!#50#!#<NULL>#!#<NULL>#!#<NULL>#!#varbinary#!#varbinary#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@i#!#9#!#1#!#0#!#<NULL>#!#1#!#135#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#datetime2#!#datetime2#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#3
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@j#!#10#!#1#!#0#!#<NULL>#!#1#!#20#!#<NULL>#!#<NULL>#!#19#!#<NULL>#!#<NULL>#!#bigint#!#bigint#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@k#!#11#!#1#!#0#!#<NULL>#!#1#!#6#!#<NULL>#!#<NULL>#!#19#!#<NULL>#!#<NULL>#!#money#!#money#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@l#!#12#!#1#!#0#!#<NULL>#!#1#!#129#!#5#!#5#!#<NULL>#!#<NULL>#!#<NULL>#!#char#!#char#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@m#!#13#!#1#!#0#!#<NULL>#!#1#!#133#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#date#!#date#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@n#!#14#!#1#!#0#!#<NULL>#!#1#!#145#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#time#!#time#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#2
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@o#!#15#!#1#!#0#!#<NULL>#!#1#!#2#!#<NULL>#!#<NULL>#!#5#!#<NULL>#!#<NULL>#!#smallint#!#smallint#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@p#!#16#!#1#!#0#!#<NULL>#!#1#!#17#!#<NULL>#!#<NULL>#!#3#!#<NULL>#!#<NULL>#!#tinyint#!#tinyint#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@q#!#17#!#1#!#0#!#<NULL>#!#1#!#5#!#<NULL>#!#<NULL>#!#15#!#<NULL>#!#<NULL>#!#float#!#float#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@r#!#18#!#1#!#0#!#<NULL>#!#1#!#4#!#<NULL>#!#<NULL>#!#7#!#<NULL>#!#<NULL>#!#real#!#real#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@s#!#19#!#1#!#0#!#<NULL>#!#1#!#135#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#smalldatetime#!#smalldatetime#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@t#!#20#!#1#!#0#!#<NULL>#!#1#!#146#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#datetimeoffset#!#datetimeoffset#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#4
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@u#!#21#!#1#!#0#!#<NULL>#!#1#!#130#!#4#!#8#!#<NULL>#!#<NULL>#!#<NULL>#!#nchar#!#nchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@v#!#22#!#1#!#0#!#<NULL>#!#1#!#141#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#xml#!#xml#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@w#!#23#!#1#!#0#!#<NULL>#!#1#!#12#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#sql_variant#!#sql_variant#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@x#!#24#!#1#!#0#!#<NULL>#!#1#!#131#!#<NULL>#!#<NULL>#!#18#!#0#!#<NULL>#!#numeric#!#numeric#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@y#!#25#!#1#!#0#!#<NULL>#!#1#!#129#!#2147483647#!#2147483647#!#<NULL>#!#<NULL>#!#<NULL>#!#text#!#text#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@z#!#26#!#1#!#0#!#<NULL>#!#1#!#130#!#1073741823#!#2147483646#!#<NULL>#!#<NULL>#!#<NULL>#!#ntext#!#ntext#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@aa#!#27#!#1#!#0#!#<NULL>#!#1#!#128#!#2147483647#!#2147483647#!#<NULL>#!#<NULL>#!#<NULL>#!#image#!#image#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@ab#!#28#!#1#!#0#!#<NULL>#!#1#!#6#!#<NULL>#!#<NULL>#!#10#!#<NULL>#!#<NULL>#!#smallmoney#!#smallmoney#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@ac#!#29#!#1#!#0#!#<NULL>#!#1#!#129#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#varchar#!#varchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@ad#!#30#!#1#!#0#!#<NULL>#!#1#!#128#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#varbinary#!#varbinary#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+~~END~~
+
+
+-- one parameter, name in another case
+EXEC sp_procedure_params_100_rowset 'BABEL_SP_PROC_PARAMS_ROWSET_P1', 1, 'dbo', '@b'
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@b#!#2#!#1#!#0#!#<NULL>#!#1#!#129#!#20#!#20#!#<NULL>#!#<NULL>#!#<NULL>#!#varchar#!#varchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+~~END~~
+
+
+-- the return value only
+EXEC sys.sp_procedure_params_100_rowset @procedure_name = 'babel_sp_proc_params_rowset_p1', @procedure_schema = 'dbo', @parameter_name = '@RETURN_VALUE'
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+master#!#dbo#!#babel_sp_proc_params_rowset_p1;1#!#@RETURN_VALUE#!#0#!#4#!#0#!#<NULL>#!#0#!#3#!#<NULL>#!#<NULL>#!#10#!#<NULL>#!#<NULL>#!#int#!#int#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+~~END~~
+
+
+-- without schema the procedures of all schemas are returned
+EXEC sys.sp_procedure_params_100_rowset 'babel_sp_proc_params_rowset_p1', 1, NULL, '@other'
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+master#!#babel_sp_proc_params_rowset_s1#!#babel_sp_proc_params_rowset_p1;1#!#@other#!#1#!#1#!#0#!#<NULL>#!#1#!#130#!#10#!#20#!#<NULL>#!#<NULL>#!#<NULL>#!#nvarchar#!#nvarchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+~~END~~
+
+
+-- a function
+EXEC sys.sp_procedure_params_100_rowset 'babel_sp_proc_params_rowset_f1'
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+master#!#dbo#!#babel_sp_proc_params_rowset_f1;0#!#@RETURN_VALUE#!#0#!#4#!#0#!#<NULL>#!#1#!#129#!#10#!#10#!#<NULL>#!#<NULL>#!#<NULL>#!#varchar#!#varchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_f1;0#!#@a#!#1#!#1#!#0#!#<NULL>#!#1#!#3#!#<NULL>#!#<NULL>#!#10#!#<NULL>#!#<NULL>#!#int#!#int#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+~~END~~
+
+
+-- another group number and a procedure that does not exist
+EXEC sys.sp_procedure_params_100_rowset 'babel_sp_proc_params_rowset_p1', 2, 'dbo', NULL
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+~~END~~
+
+
+EXEC sys.sp_procedure_params_100_rowset 'babel_sp_proc_params_rowset_nothing'
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+~~END~~
+
+
+-- call with the database name like the provider does
+DECLARE @p1 VARCHAR(128) = 'babel_sp_proc_params_rowset_f1', @p2 INT = 1, @p3 VARCHAR(128) = 'dbo', @p4 VARCHAR(128) = NULL
+EXEC [master].[sys].sp_procedure_params_100_rowset @p1, @p2, @p3, @p4
+GO
+~~START~~
+varchar#!#varchar#!#nvarchar#!#varchar#!#smallint#!#smallint#!#tinyint#!#nvarchar#!#bit#!#smallint#!#int#!#int#!#smallint#!#smallint#!#nvarchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar#!#varchar#!#varchar#!#int
+master#!#dbo#!#babel_sp_proc_params_rowset_f1;0#!#@RETURN_VALUE#!#0#!#4#!#0#!#<NULL>#!#1#!#129#!#10#!#10#!#<NULL>#!#<NULL>#!#<NULL>#!#varchar#!#varchar#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+master#!#dbo#!#babel_sp_proc_params_rowset_f1;0#!#@a#!#1#!#1#!#0#!#<NULL>#!#1#!#3#!#<NULL>#!#<NULL>#!#10#!#<NULL>#!#<NULL>#!#int#!#int#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>
+~~END~~
+

@@ -244,6 +244,7 @@ TestFloat
 Test-Identity-before-14_7-or-15_2
 TestImage
 TestInt
+babel_sp_procedure_params_100_rowset
 TestMoney
 TestNotNull
 TestNumeric

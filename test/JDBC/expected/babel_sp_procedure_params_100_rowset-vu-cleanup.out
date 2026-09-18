@@ -1,0 +1,11 @@
+DROP PROCEDURE babel_sp_proc_params_rowset_s1.babel_sp_proc_params_rowset_p1
+GO
+
+DROP SCHEMA babel_sp_proc_params_rowset_s1
+GO
+
+DROP FUNCTION babel_sp_proc_params_rowset_f1
+GO
+
+DROP PROCEDURE babel_sp_proc_params_rowset_p1
+GO

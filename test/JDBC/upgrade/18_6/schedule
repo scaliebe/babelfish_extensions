@@ -432,6 +432,7 @@ TestFloat
 Test-Identity
 TestImage
 TestInt
+babel_sp_procedure_params_100_rowset
 TestMoney
 TestNotNull
 #TestNumeric
