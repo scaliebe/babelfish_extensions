@@ -1,2 +1,3 @@
 select_into_rowcount
 TestInt
+babel_xp_instance_regread_no_output

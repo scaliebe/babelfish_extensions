@@ -50,6 +50,17 @@ CREATE PROCEDURE xp_instance_regread(IN p1 sys.nvarchar(512),
 AS 'babelfishpg_tsql', 'xp_instance_regread_internal'
 LANGUAGE C;
 
+-- variants with the optional fifth argument ('no_output')
+CREATE PROCEDURE xp_instance_regread(IN p1 sys.nvarchar(512),
+	IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param int, IN p5 sys.varchar(10))
+AS 'babelfishpg_tsql', 'xp_instance_regread_internal'
+LANGUAGE C;
+
+CREATE PROCEDURE xp_instance_regread(IN p1 sys.nvarchar(512),
+	IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param sys.nvarchar(512), IN p5 sys.varchar(10))
+AS 'babelfishpg_tsql', 'xp_instance_regread_internal'
+LANGUAGE C;
+
 --
 -- The procedures below requires return code as a RETURN statement which is
 -- only possible in pltsql. Therefore, we create them here and call into the

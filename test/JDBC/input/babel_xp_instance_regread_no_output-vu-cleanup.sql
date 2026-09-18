@@ -1,0 +1,2 @@
+DROP PROCEDURE babel_xp_instance_regread_no_output_p1
+GO

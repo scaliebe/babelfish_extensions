@@ -5219,6 +5219,33 @@ CREATE OR REPLACE VIEW information_schema_tsql.SEQUENCES AS
 
 GRANT SELECT ON information_schema_tsql.sequences TO PUBLIC;
 
+-- xp_instance_regread with the optional fifth argument
+CREATE OR REPLACE PROCEDURE sys.xp_instance_regread(IN p1 sys.nvarchar(512),
+	IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param int, IN p5 sys.varchar(10))
+AS 'babelfishpg_tsql', 'xp_instance_regread_internal'
+LANGUAGE C;
+
+CREATE OR REPLACE PROCEDURE sys.xp_instance_regread(IN p1 sys.nvarchar(512),
+	IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param sys.nvarchar(512), IN p5 sys.varchar(10))
+AS 'babelfishpg_tsql', 'xp_instance_regread_internal'
+LANGUAGE C;
+
+DO $$
+BEGIN
+  -- master_dbo does not exist if Babelfish has not been initialized yet
+  IF EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'master_dbo') THEN
+    CREATE OR REPLACE PROCEDURE sys.create_xp_instance_regread_in_master_dbo()
+    LANGUAGE C
+    AS 'babelfishpg_tsql', 'create_xp_instance_regread_in_master_dbo_internal';
+
+    CALL sys.create_xp_instance_regread_in_master_dbo();
+    ALTER PROCEDURE master_dbo.xp_instance_regread(sys.nvarchar(512), sys.sysname, sys.nvarchar(512), int, sys.varchar(10)) OWNER TO sysadmin;
+    ALTER PROCEDURE master_dbo.xp_instance_regread(sys.nvarchar(512), sys.sysname, sys.nvarchar(512), sys.nvarchar(512), sys.varchar(10)) OWNER TO sysadmin;
+    DROP PROCEDURE sys.create_xp_instance_regread_in_master_dbo;
+  END IF;
+END
+$$;
+
 -- BABEL-5975: drop the deprecated sys.pg_namespace_ext left behind by the rename
 -- above. All dependent views/functions have been recreated to bind to the new
 -- sys.pg_namespace_ext, so the non-CASCADE drop must succeed; if it fails, a

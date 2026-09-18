@@ -1750,10 +1750,12 @@ create_xp_qv_in_master_dbo_internal(PG_FUNCTION_ARGS)
 Datum
 xp_instance_regread_internal(PG_FUNCTION_ARGS)
 {
-	int			nargs = PG_NARGS() - 1;
-
-	/* Get data type OID of last parameter, which should be the OUT parameter. */
-	Oid			argtypeid = get_fn_expr_argtype(fcinfo->flinfo, nargs);
+	/*
+	 * Get data type OID of the fourth parameter, which is the OUT parameter.
+	 * An optional fifth parameter ('no_output') can follow; it only controls
+	 * whether a result set is returned, which is never the case here.
+	 */
+	Oid			argtypeid = get_fn_expr_argtype(fcinfo->flinfo, 3);
 
 	HeapTuple	tuple;
 	HeapTupleHeader result;
@@ -1797,6 +1799,8 @@ create_xp_instance_regread_in_master_dbo_internal(PG_FUNCTION_ARGS)
 {
 	char	   *query = NULL;
 	char	   *query2 = NULL;
+	char	   *query3 = NULL;
+	char	   *query4 = NULL;
 	int			rc = -1;
 
 	char	   *tempq = "CREATE OR REPLACE PROCEDURE %s.xp_instance_regread(IN p1 sys.nvarchar(512), IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param int)"
@@ -1805,10 +1809,18 @@ create_xp_instance_regread_in_master_dbo_internal(PG_FUNCTION_ARGS)
 	char	   *tempq2 = "CREATE OR REPLACE PROCEDURE %s.xp_instance_regread(IN p1 sys.nvarchar(512), IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param sys.nvarchar(512))"
 	"AS \'babelfishpg_tsql\', \'xp_instance_regread_internal\' LANGUAGE C";
 
+	char	   *tempq3 = "CREATE OR REPLACE PROCEDURE %s.xp_instance_regread(IN p1 sys.nvarchar(512), IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param int, IN p5 sys.varchar(10))"
+	"AS \'babelfishpg_tsql\', \'xp_instance_regread_internal\' LANGUAGE C";
+
+	char	   *tempq4 = "CREATE OR REPLACE PROCEDURE %s.xp_instance_regread(IN p1 sys.nvarchar(512), IN p2 sys.sysname, IN p3 sys.nvarchar(512), INOUT out_param sys.nvarchar(512), IN p5 sys.varchar(10))"
+	"AS \'babelfishpg_tsql\', \'xp_instance_regread_internal\' LANGUAGE C";
+
 	char	   *dbo_scm = get_dbo_schema_name("master");
 
 	query = psprintf(tempq, dbo_scm);
 	query2 = psprintf(tempq2, dbo_scm);
+	query3 = psprintf(tempq3, dbo_scm);
+	query4 = psprintf(tempq4, dbo_scm);
 
 	pfree(dbo_scm);
 
@@ -1819,6 +1831,12 @@ create_xp_instance_regread_in_master_dbo_internal(PG_FUNCTION_ARGS)
 		elog(ERROR, "SPI_execute failed: %s", SPI_result_code_string(rc));
 
 	if ((rc = SPI_execute(query2, false, 1)) < 0)
+		elog(ERROR, "SPI_execute failed: %s", SPI_result_code_string(rc));
+
+	if ((rc = SPI_execute(query3, false, 1)) < 0)
+		elog(ERROR, "SPI_execute failed: %s", SPI_result_code_string(rc));
+
+	if ((rc = SPI_execute(query4, false, 1)) < 0)
 		elog(ERROR, "SPI_execute failed: %s", SPI_result_code_string(rc));
 
 	if ((rc = SPI_finish()) != SPI_OK_FINISH)

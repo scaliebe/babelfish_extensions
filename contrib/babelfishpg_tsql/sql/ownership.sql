@@ -186,6 +186,8 @@ BEGIN
   CALL sys.create_xp_instance_regread_in_master_dbo();
   ALTER PROCEDURE master_dbo.xp_instance_regread(sys.nvarchar(512), sys.sysname, sys.nvarchar(512), int) OWNER TO sysadmin;
   ALTER PROCEDURE master_dbo.xp_instance_regread(sys.nvarchar(512), sys.sysname, sys.nvarchar(512), sys.nvarchar(512)) OWNER TO sysadmin;
+  ALTER PROCEDURE master_dbo.xp_instance_regread(sys.nvarchar(512), sys.sysname, sys.nvarchar(512), int, sys.varchar(10)) OWNER TO sysadmin;
+  ALTER PROCEDURE master_dbo.xp_instance_regread(sys.nvarchar(512), sys.sysname, sys.nvarchar(512), sys.nvarchar(512), sys.varchar(10)) OWNER TO sysadmin;
   DROP PROCEDURE sys.create_xp_instance_regread_in_master_dbo;
 
   CREATE OR REPLACE VIEW msdb_dbo.syspolicy_system_health_state
