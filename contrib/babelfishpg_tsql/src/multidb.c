@@ -956,14 +956,14 @@ rewrite_rangevar(RangeVar *rv)
 }
 
 /*
- * A routine that is dropped without schema name is a user routine. T-SQL
- * gives no argument list, so the lookup along the search path would also
- * consider the system functions in the shared schemas and fail with "function
- * name is not unique" if the name matches an overloaded one. Qualify such a
- * name with the first non-shared schema of the search path that contains a
- * routine of this name. If there is none but the name exists in a shared
- * schema, use the first non-shared schema, so that the routine is reported as
- * missing.
+ * T-SQL gives no argument list when a routine is dropped, so the lookup along
+ * the search path considers every routine of that name, including the system
+ * routines in the shared schemas. A user routine whose name matches a system
+ * routine (e.g. dbo.concat) then cannot be dropped without schema name: the
+ * statement fails with "function name is not unique". Qualify the name with
+ * the first non-shared schema of the search path that contains a routine of
+ * this name. Names that do not collide with a routine in a shared schema are
+ * left as they are, so nothing changes for them.
  */
 static void
 qualify_routine_names_with_user_schema(List *objs)
@@ -977,53 +977,62 @@ qualify_routine_names_with_user_schema(List *objs)
 		List	   *search_path;
 		ListCell   *lc;
 		CatCList   *catlist;
-		char	   *first_user_schema = NULL;
-		bool		qualified = false;
+		char	   *user_schema = NULL;
+		bool		in_shared_schema = false;
+		int			i;
 
 		if (list_length(obj->objname) != 1)
 			continue;
 
 		routine_name = strVal(linitial(obj->objname));
 		catlist = SearchSysCacheList1(PROCNAMEARGSNSP, CStringGetDatum(routine_name));
-		search_path = fetch_search_path(false);
 
-		foreach(lc, search_path)
+		for (i = 0; i < catlist->n_members; i++)
 		{
-			Oid			nspoid = lfirst_oid(lc);
-			char	   *nspname = get_namespace_name(nspoid);
-			bool		found = false;
-			int			i;
+			Form_pg_proc procform = (Form_pg_proc) GETSTRUCT(&catlist->members[i]->tuple);
+			char	   *nspname = get_namespace_name(procform->pronamespace);
 
-			if (nspname == NULL || is_shared_schema(nspname))
-				continue;
-
-			if (first_user_schema == NULL)
-				first_user_schema = nspname;
-
-			for (i = 0; i < catlist->n_members; i++)
+			if (nspname != NULL && is_shared_schema(nspname))
 			{
-				Form_pg_proc procform = (Form_pg_proc) GETSTRUCT(&catlist->members[i]->tuple);
-
-				if (procform->pronamespace == nspoid)
-				{
-					found = true;
-					break;
-				}
-			}
-
-			if (found)
-			{
-				obj->objname = list_make2(makeString(nspname), makeString(routine_name));
-				qualified = true;
+				in_shared_schema = true;
 				break;
 			}
 		}
 
-		if (!qualified && first_user_schema != NULL && catlist->n_members > 0)
-			obj->objname = list_make2(makeString(first_user_schema), makeString(routine_name));
+		if (in_shared_schema)
+		{
+			search_path = fetch_search_path(false);
+
+			foreach(lc, search_path)
+			{
+				Oid			nspoid = lfirst_oid(lc);
+				char	   *nspname = get_namespace_name(nspoid);
+
+				if (nspname == NULL || is_shared_schema(nspname))
+					continue;
+
+				for (i = 0; i < catlist->n_members; i++)
+				{
+					Form_pg_proc procform = (Form_pg_proc) GETSTRUCT(&catlist->members[i]->tuple);
+
+					if (procform->pronamespace == nspoid)
+					{
+						user_schema = nspname;
+						break;
+					}
+				}
+
+				if (user_schema != NULL)
+					break;
+			}
+
+			list_free(search_path);
+		}
+
+		if (user_schema != NULL)
+			obj->objname = list_make2(makeString(user_schema), makeString(routine_name));
 
 		ReleaseSysCacheList(catlist);
-		list_free(search_path);
 	}
 }
 

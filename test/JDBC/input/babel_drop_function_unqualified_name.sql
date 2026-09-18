@@ -15,17 +15,11 @@ GO
 SELECT OBJECT_ID('dbo.concat')
 GO
 
--- the system function is still there and cannot be dropped this way; the
--- message contains the physical schema name, so only the number is shown
+-- the system function is still there and cannot be dropped this way
 SELECT CONCAT('abc', 'def')
 GO
 
-BEGIN TRY
-    DROP FUNCTION concat
-END TRY
-BEGIN CATCH
-    SELECT ERROR_NUMBER()
-END CATCH
+DROP FUNCTION concat
 GO
 
 -- IF EXISTS
@@ -33,9 +27,6 @@ CREATE FUNCTION dbo.replicate (@a INT) RETURNS INT AS
 BEGIN
     RETURN @a
 END
-GO
-
-DROP FUNCTION IF EXISTS replicate
 GO
 
 DROP FUNCTION IF EXISTS replicate
@@ -67,12 +58,7 @@ BEGIN
 END
 GO
 
-BEGIN TRY
-    DROP FUNCTION concat
-END TRY
-BEGIN CATCH
-    SELECT ERROR_NUMBER()
-END CATCH
+DROP FUNCTION concat
 GO
 
 SELECT babel_drop_function_unq_s1.concat(1)
