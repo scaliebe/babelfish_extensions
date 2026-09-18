@@ -215,8 +215,9 @@ SELECT @xml.value('(/root/item)[1]', 'varchar(100)');
 GO
 ~~START~~
 varchar
-Data
-~~END~~
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: could not parse XML document)~~
 
 
 -- Test with NULL input
