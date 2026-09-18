@@ -387,6 +387,7 @@ Test-Identity
 TestImage
 TestInt
 babel_xp_instance_regread_no_output
+babel_sp_procedure_params_100_rowset
 TestMoney
 TestNotNull
 TestNumeric

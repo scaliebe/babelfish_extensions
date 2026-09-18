@@ -5448,6 +5448,112 @@ BEGIN
   END IF;
 END
 $$;
+CREATE OR REPLACE PROCEDURE sys.sp_procedure_params_100_rowset(IN "@procedure_name" sys.sysname,
+                                                               IN "@group_number" integer DEFAULT 1,
+                                                               IN "@procedure_schema" sys.sysname DEFAULT NULL,
+                                                               IN "@parameter_name" sys.sysname DEFAULT NULL)
+AS $$
+BEGIN
+	-- PROCEDURE_PARAMETERS schema rowset as requested by OLE DB providers.
+	-- A procedure has the additional row @RETURN_VALUE, for a function this
+	-- row describes the returned value (parameter_id 0).
+	SELECT
+		CAST(sys.db_name() AS sys.sysname) AS [PROCEDURE_CATALOG],
+		CAST(s.name AS sys.sysname) AS [PROCEDURE_SCHEMA],
+		CAST(PG_CATALOG.CONCAT(o.name, CASE WHEN o.type IN ('P', 'PC', 'X') THEN ';1' ELSE ';0' END) AS sys.nvarchar(134)) AS [PROCEDURE_NAME],
+		CAST(CASE WHEN p.parameter_id = 0 THEN '@RETURN_VALUE' ELSE p.name END AS sys.sysname) AS [PARAMETER_NAME],
+		CAST(p.parameter_id AS smallint) AS [ORDINAL_POSITION],
+		CAST(CASE WHEN p.parameter_id = 0 THEN 4 WHEN p.is_output = 1 THEN 2 ELSE 1 END AS smallint) AS [PARAMETER_TYPE],
+		CAST(0 AS sys.tinyint) AS [PARAMETER_HASDEFAULT],
+		CAST(NULL AS sys.nvarchar(255)) AS [PARAMETER_DEFAULT],
+		CAST(CASE WHEN p.parameter_id = 0 AND o.type IN ('P', 'PC', 'X') THEN 0 ELSE 1 END AS sys.bit) AS [IS_NULLABLE],
+		CAST(CASE p.type_name
+			WHEN 'bigint' THEN 20
+			WHEN 'binary' THEN 128
+			WHEN 'bit' THEN 11
+			WHEN 'char' THEN 129
+			WHEN 'date' THEN 133
+			WHEN 'datetime' THEN 135
+			WHEN 'datetime2' THEN 135
+			WHEN 'datetimeoffset' THEN 146
+			WHEN 'decimal' THEN 131
+			WHEN 'float' THEN 5
+			WHEN 'image' THEN 128
+			WHEN 'int' THEN 3
+			WHEN 'money' THEN 6
+			WHEN 'nchar' THEN 130
+			WHEN 'ntext' THEN 130
+			WHEN 'numeric' THEN 131
+			WHEN 'nvarchar' THEN 130
+			WHEN 'real' THEN 4
+			WHEN 'smalldatetime' THEN 135
+			WHEN 'smallint' THEN 2
+			WHEN 'smallmoney' THEN 6
+			WHEN 'sql_variant' THEN 12
+			WHEN 'sysname' THEN 130
+			WHEN 'text' THEN 129
+			WHEN 'time' THEN 145
+			WHEN 'tinyint' THEN 17
+			WHEN 'uniqueidentifier' THEN 72
+			WHEN 'varbinary' THEN 128
+			WHEN 'varchar' THEN 129
+			WHEN 'xml' THEN 141
+			ELSE 0 END AS smallint) AS [DATA_TYPE],
+		CAST(CASE
+			WHEN p.type_name IN ('text', 'image') THEN 2147483647
+			WHEN p.type_name = 'ntext' THEN 1073741823
+			WHEN p.type_name IN ('char', 'varchar', 'binary', 'varbinary') THEN CASE WHEN p.max_length = -1 THEN 0 ELSE p.max_length END
+			WHEN p.type_name IN ('nchar', 'nvarchar', 'sysname') THEN CASE WHEN p.max_length = -1 THEN 0 ELSE p.max_length / 2 END
+			ELSE NULL END AS int) AS [CHARACTER_MAXIMUM_LENGTH],
+		CAST(CASE
+			WHEN p.type_name IN ('text', 'image') THEN 2147483647
+			WHEN p.type_name = 'ntext' THEN 2147483646
+			WHEN p.type_name IN ('char', 'varchar', 'binary', 'varbinary', 'nchar', 'nvarchar', 'sysname') THEN CASE WHEN p.max_length = -1 THEN 0 ELSE p.max_length END
+			ELSE NULL END AS int) AS [CHARACTER_OCTET_LENGTH],
+		CAST(CASE
+			WHEN p.type_name = 'float' THEN 15
+			WHEN p.type_name = 'real' THEN 7
+			WHEN p.type_name IN ('tinyint', 'smallint', 'int', 'bigint', 'decimal', 'numeric', 'money', 'smallmoney') THEN p.precision
+			ELSE NULL END AS smallint) AS [NUMERIC_PRECISION],
+		CAST(CASE WHEN p.type_name IN ('decimal', 'numeric') THEN p.scale ELSE NULL END AS smallint) AS [NUMERIC_SCALE],
+		CAST(NULL AS sys.nvarchar(50)) AS [DESCRIPTION],
+		CAST(p.type_name AS sys.sysname) AS [TYPE_NAME],
+		CAST(p.type_name AS sys.sysname) AS [LOCAL_TYPE_NAME],
+		CAST(NULL AS sys.sysname) AS [SS_XML_SCHEMACOLLECTION_CATALOGNAME],
+		CAST(NULL AS sys.sysname) AS [SS_XML_SCHEMACOLLECTION_SCHEMANAME],
+		CAST(NULL AS sys.sysname) AS [SS_XML_SCHEMACOLLECTIONNAME],
+		CAST(NULL AS sys.sysname) AS [SS_UDT_CATALOGNAME],
+		CAST(NULL AS sys.sysname) AS [SS_UDT_SCHEMANAME],
+		CAST(NULL AS sys.sysname) AS [SS_UDT_NAME],
+		CAST(NULL AS sys.nvarchar(4000)) AS [SS_UDT_ASSEMBLY_TYPENAME],
+		CAST(NULL AS sys.sysname) AS [SS_TYPE_CATALOG_NAME],
+		CAST(NULL AS sys.sysname) AS [SS_TYPE_SCHEMANAME],
+		CAST(CASE
+			WHEN p.type_name = 'datetime' THEN 3
+			WHEN p.type_name IN ('date', 'smalldatetime') THEN 0
+			WHEN p.type_name IN ('datetime2', 'datetimeoffset', 'time') THEN p.scale
+			ELSE NULL END AS int) AS [SS_DATETIME_PRECISION]
+	FROM sys.all_objects o
+	INNER JOIN sys.schemas s ON s.schema_id = o.schema_id
+	INNER JOIN
+	(
+		SELECT ap.object_id, ap.name, ap.parameter_id, ap.is_output, ap.max_length, ap.precision, ap.scale,
+			CAST(sys.type_name(ap.system_type_id) AS sys.sysname) AS type_name
+		FROM sys.all_parameters ap
+		UNION ALL
+		SELECT ao.object_id, CAST('@RETURN_VALUE' AS sys.sysname), 0, CAST(1 AS sys.bit), CAST(4 AS smallint), CAST(10 AS sys.tinyint), CAST(0 AS sys.tinyint),
+			CAST('int' AS sys.sysname)
+		FROM sys.all_objects ao WHERE ao.type IN ('P', 'PC', 'X')
+	) p ON p.object_id = o.object_id
+	WHERE o.type IN ('P', 'PC', 'X', 'FN', 'IF', 'TF', 'AF')
+		AND o.name = @procedure_name
+		AND (@procedure_schema IS NULL OR s.name = @procedure_schema)
+		AND (@parameter_name IS NULL OR CASE WHEN p.parameter_id = 0 THEN '@RETURN_VALUE' ELSE p.name END = @parameter_name)
+		AND (@group_number IS NULL OR @group_number = 1)
+	ORDER BY 2, 3, 5;
+END;
+$$ LANGUAGE pltsql;
+GRANT EXECUTE ON PROCEDURE sys.sp_procedure_params_100_rowset TO PUBLIC;
 
 -- BABEL-5975: drop the deprecated sys.pg_namespace_ext left behind by the rename
 -- above. All dependent views/functions have been recreated to bind to the new

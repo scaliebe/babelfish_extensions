@@ -4,3 +4,4 @@ babel_collation_latin1_general_versioned
 babel_langid
 babel_sp_rename_default_objtype
 babel_xp_instance_regread_no_output
+babel_sp_procedure_params_100_rowset
