@@ -2042,6 +2042,8 @@ typedef struct tsql_identity_insert_fields
 	bool		valid;
 	Oid			rel_oid;
 	Oid			schema_oid;
+	/* plan was built while a batch was only prepared, see pltsql_prepare_only */
+	bool		prepare_only;
 } tsql_identity_insert_fields;
 
 /* 
@@ -2060,6 +2062,13 @@ typedef struct tsql_compare_context
 extern int tsql_compare_values(const void *a, const void *b, void *arg);
 
 extern tsql_identity_insert_fields tsql_identity_insert;
+
+/*
+ * True while the statements of a batch are prepared without being executed
+ * (sp_prepare). T-SQL checks an explicit value for an identity column against
+ * IDENTITY_INSERT when the statement is executed, not when it is prepared.
+ */
+extern bool pltsql_prepare_only;
 extern check_lang_as_clause_hook_type check_lang_as_clause_hook;
 extern write_stored_proc_probin_hook_type write_stored_proc_probin_hook;
 extern make_fn_arguments_from_stored_proc_probin_hook_type make_fn_arguments_from_stored_proc_probin_hook;
