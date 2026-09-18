@@ -382,6 +382,7 @@ TestFloat
 Test-Identity
 TestImage
 TestInt
+babel_xp_instance_regread_no_output
 TestMoney
 TestNotNull
 TestNumeric
