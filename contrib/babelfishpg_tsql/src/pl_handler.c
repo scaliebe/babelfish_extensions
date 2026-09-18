@@ -315,7 +315,8 @@ bool		pltsql_trace_exec_codes = false;
 bool		pltsql_trace_exec_counts = false;
 bool		pltsql_trace_exec_time = false;
 
-tsql_identity_insert_fields tsql_identity_insert = {false, InvalidOid, InvalidOid};
+tsql_identity_insert_fields tsql_identity_insert = {false, InvalidOid, InvalidOid, false};
+bool		pltsql_prepare_only = false;
 
 /* Hook for plugins */
 PLtsql_plugin **pltsql_plugin_ptr = NULL;
@@ -1230,6 +1231,16 @@ pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 					tsql_identity_insert.valid = false;
 			}
 		}
+
+		/*
+		 * While a batch is only prepared, an explicit value for the identity
+		 * column must not be rejected yet: IDENTITY_INSERT is checked when
+		 * the statement is executed. The plan is marked as prepare-only and
+		 * is analyzed again before it is executed (see plan_inval.c), which
+		 * then reports the error if IDENTITY_INSERT is still off.
+		 */
+		if (pltsql_prepare_only && has_ident && query->override == OVERRIDING_NOT_SET)
+			query->override = OVERRIDING_SYSTEM_VALUE;
 	}
 	else if (query->commandType == CMD_SELECT)
 	{
@@ -7576,7 +7587,13 @@ pltsql_inline_handler(PG_FUNCTION_ARGS)
 			/* Mark the function as busy, just pro forma */
 			func->use_count++;
 
+			/*
+			 * With NO_EXEC the statements are only prepared (sp_prepare); see
+			 * pltsql_prepare_only.
+			 */
+			pltsql_prepare_only = OPTION_ENABLED(codeblock_args, NO_EXEC);
 			apply_post_compile_actions(func, codeblock_args);
+			pltsql_prepare_only = false;
 
 			if (OPTION_ENABLED(codeblock_args, NO_EXEC))
 			{
@@ -7596,6 +7613,7 @@ pltsql_inline_handler(PG_FUNCTION_ARGS)
 	}
 	PG_CATCH();
 	{
+		pltsql_prepare_only = false;
 		terminate_batch(true /* send_error */ , true /* compile_error */ , current_spi_stack_depth);
 		return retval;
 	}

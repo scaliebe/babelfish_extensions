@@ -29,6 +29,7 @@ void		pltsql_add_guc_plan(CachedPlanSource *plansource);
 bool		pltsql_check_guc_plan(CachedPlanSource *plansource);
 
 static void pltsql_initialize_identity_insert_plan(CachedPlanSource *plansource);
+static void pltsql_update_identity_insert_plan_info(tsql_identity_insert_fields *id_insert_info);
 static bool pltsql_revalidate_identity_insert_plan(CachedPlanSource *plansource,
 												   List *info_sublist);
 
@@ -105,6 +106,7 @@ pltsql_initialize_identity_insert_plan(CachedPlanSource *plansource)
 	id_insert_state->valid = tsql_identity_insert.valid;
 	id_insert_state->rel_oid = tsql_identity_insert.rel_oid;
 	id_insert_state->schema_oid = tsql_identity_insert.schema_oid;
+	id_insert_state->prepare_only = pltsql_prepare_only;
 
 	/* Create info sublist */
 	id_insert_info_sublist = lappend(id_insert_info_sublist, id_insert_enum);
@@ -113,6 +115,22 @@ pltsql_initialize_identity_insert_plan(CachedPlanSource *plansource)
 	/* Append to plan info list */
 	plansource->pltsql_plan_info = lappend(plansource->pltsql_plan_info,
 										   id_insert_info_sublist);
+}
+
+/*
+ * The plan is analyzed again under the current state of IDENTITY_INSERT once
+ * it has been reported as invalid, so remember this state for the next
+ * revalidation. Otherwise a plan that was analyzed while IDENTITY_INSERT was
+ * ON would be considered valid again as soon as the state is back to the one
+ * the plan was created with.
+ */
+static void
+pltsql_update_identity_insert_plan_info(tsql_identity_insert_fields *id_insert_info)
+{
+	id_insert_info->valid = tsql_identity_insert.valid;
+	id_insert_info->rel_oid = tsql_identity_insert.rel_oid;
+	id_insert_info->schema_oid = tsql_identity_insert.schema_oid;
+	id_insert_info->prepare_only = pltsql_prepare_only;
 }
 
 /*
@@ -135,6 +153,17 @@ pltsql_revalidate_identity_insert_plan(CachedPlanSource *plansource,
 	{
 		ListCell   *lc_rel;
 
+		/*
+		 * A plan that was built while the batch was only prepared did not
+		 * check an explicit identity value against IDENTITY_INSERT. Analyze it
+		 * again now that it is going to be executed.
+		 */
+		if (id_insert_info->prepare_only && !pltsql_prepare_only)
+		{
+			pltsql_update_identity_insert_plan_info(id_insert_info);
+			return false;
+		}
+
 		foreach(lc_rel, plansource->relationOids)
 		{
 			Oid			cur_rel = lfirst_oid(lc_rel);
@@ -147,7 +176,10 @@ pltsql_revalidate_identity_insert_plan(CachedPlanSource *plansource,
 				if (id_insert_info->valid != tsql_identity_insert.valid ||
 					id_insert_info->rel_oid != tsql_identity_insert.rel_oid ||
 					id_insert_info->schema_oid != tsql_identity_insert.schema_oid)
+				{
+					pltsql_update_identity_insert_plan_info(id_insert_info);
 					return false;
+				}
 			}
 		}
 	}
