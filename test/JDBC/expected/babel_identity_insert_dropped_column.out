@@ -115,6 +115,61 @@ int#!#varchar
 ~~END~~
 
 
+-- identity column with a mixed case name, with and without a dropped column
+CREATE TABLE babel_identity_insert_dropped_t3 (Junk INT, MixedCaseId INT IDENTITY(1,1) NOT NULL, Note VARCHAR(20))
+GO
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 ON
+GO
+
+INSERT INTO babel_identity_insert_dropped_t3 (Junk, MixedCaseId, Note) VALUES (0, 20, 'twenty')
+GO
+~~ROW COUNT: 1~~
+
+
+SELECT CAST(IDENT_CURRENT('babel_identity_insert_dropped_t3') AS INT)
+GO
+~~START~~
+int
+20
+~~END~~
+
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 OFF
+GO
+
+ALTER TABLE babel_identity_insert_dropped_t3 DROP COLUMN Junk
+GO
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 ON
+GO
+
+INSERT INTO babel_identity_insert_dropped_t3 (MixedCaseId, Note) VALUES (30, 'thirty')
+GO
+~~ROW COUNT: 1~~
+
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 OFF
+GO
+
+INSERT INTO babel_identity_insert_dropped_t3 (Note) VALUES ('next')
+GO
+~~ROW COUNT: 1~~
+
+
+SELECT MixedCaseId, Note FROM babel_identity_insert_dropped_t3 ORDER BY MixedCaseId
+GO
+~~START~~
+int#!#varchar
+20#!#twenty
+30#!#thirty
+31#!#next
+~~END~~
+
+
+DROP TABLE babel_identity_insert_dropped_t3
+GO
+
 DROP TABLE babel_identity_insert_dropped_t1
 GO
 

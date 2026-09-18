@@ -75,6 +75,43 @@ GO
 SELECT id, a FROM babel_identity_insert_dropped_t1 ORDER BY id
 GO
 
+-- identity column with a mixed case name, with and without a dropped column
+CREATE TABLE babel_identity_insert_dropped_t3 (Junk INT, MixedCaseId INT IDENTITY(1,1) NOT NULL, Note VARCHAR(20))
+GO
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 ON
+GO
+
+INSERT INTO babel_identity_insert_dropped_t3 (Junk, MixedCaseId, Note) VALUES (0, 20, 'twenty')
+GO
+
+SELECT CAST(IDENT_CURRENT('babel_identity_insert_dropped_t3') AS INT)
+GO
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 OFF
+GO
+
+ALTER TABLE babel_identity_insert_dropped_t3 DROP COLUMN Junk
+GO
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 ON
+GO
+
+INSERT INTO babel_identity_insert_dropped_t3 (MixedCaseId, Note) VALUES (30, 'thirty')
+GO
+
+SET IDENTITY_INSERT babel_identity_insert_dropped_t3 OFF
+GO
+
+INSERT INTO babel_identity_insert_dropped_t3 (Note) VALUES ('next')
+GO
+
+SELECT MixedCaseId, Note FROM babel_identity_insert_dropped_t3 ORDER BY MixedCaseId
+GO
+
+DROP TABLE babel_identity_insert_dropped_t3
+GO
+
 DROP TABLE babel_identity_insert_dropped_t1
 GO
 
