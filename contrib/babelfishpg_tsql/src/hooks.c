@@ -52,6 +52,7 @@
 #include "executor/spi_priv.h"
 #include "funcapi.h"
 #include "libpq/libpq.h"
+#include "mb/pg_wchar.h"
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -9487,6 +9488,80 @@ tsql_set_typmod_aggref(ParseState *pstate, Node *AggExp)
 	return AggExp;
 }
 
+/*
+ * Maximum length in characters of a string operand of the + operator, or -1
+ * if it is not known or not limited (varchar(max)).
+ */
+static int32
+tsql_string_operand_length(Node *expr)
+{
+	int32		typmod;
+
+	if (expr == NULL)
+		return -1;
+
+	/* look through casts that do not carry a length themselves */
+	for (;;)
+	{
+		if (exprTypmod(expr) != -1)
+			break;
+
+		if (IsA(expr, RelabelType))
+			expr = (Node *) ((RelabelType *) expr)->arg;
+		else if (IsA(expr, CoerceViaIO))
+			expr = (Node *) ((CoerceViaIO *) expr)->arg;
+		else if (IsA(expr, FuncExpr) &&
+				 ((FuncExpr *) expr)->funcformat == COERCE_IMPLICIT_CAST &&
+				 list_length(((FuncExpr *) expr)->args) == 1)
+			expr = (Node *) linitial(((FuncExpr *) expr)->args);
+		else
+			break;
+
+		if (expr == NULL)
+			return -1;
+	}
+
+	typmod = exprTypmod(expr);
+	if (typmod != -1)
+	{
+		Oid			basetype = getBaseType(exprType(expr));
+
+		if ((*common_utility_plugin_ptr->is_tsql_varchar_datatype) (basetype) ||
+			(*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (basetype) ||
+			(*common_utility_plugin_ptr->is_tsql_bpchar_datatype) (basetype) ||
+			(*common_utility_plugin_ptr->is_tsql_nchar_datatype) (basetype) ||
+			basetype == VARCHAROID || basetype == BPCHAROID)
+			return typmod - VARHDRSZ;
+
+		return -1;
+	}
+
+	/* a string literal has the length of its value, at least 1 */
+	if (IsA(expr, Const) && !((Const *) expr)->constisnull)
+	{
+		Const	   *con = (Const *) expr;
+		int32		len = -1;
+
+		if (con->consttype == UNKNOWNOID)
+			len = pg_mbstrlen(DatumGetCString(con->constvalue));
+		else if (con->constlen == -1 &&
+				 (con->consttype == TEXTOID ||
+				  (*common_utility_plugin_ptr->is_tsql_varchar_datatype) (getBaseType(con->consttype)) ||
+				  (*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (getBaseType(con->consttype))))
+		{
+			text	   *val = DatumGetTextPP(con->constvalue);
+
+			len = pg_mbstrlen_with_len(VARDATA_ANY(val), VARSIZE_ANY_EXHDR(val));
+		}
+
+		if (len == 0)
+			len = 1;
+		return len;
+	}
+
+	return -1;
+}
+
 static Node*
 tsql_set_typmod_op_expr(ParseState *pstate, Node *OpExp, Node *lexpr, Node* rexpr)
 {
@@ -9529,6 +9604,42 @@ tsql_set_typmod_op_expr(ParseState *pstate, Node *OpExp, Node *lexpr, Node* rexp
 										 COERCION_EXPLICIT,
 										 COERCE_EXPLICIT_CAST,
 										 -1);
+		}
+		else if (strcmp(opname, "+") == 0)
+		{
+			/*
+			 * String concatenation: the result of varchar(n) + varchar(m) is
+			 * varchar(n + m) in T-SQL, limited to 8000 (4000 for nvarchar).
+			 * Without a typmod the result is described as varchar(max) to the
+			 * client, which then handles the column as a LOB.
+			 */
+			/* sys.nvarchar is a domain over sys.varchar, so check it before looking at the base type */
+			Oid			restype = getBaseType(op->opresulttype);
+			bool		is_nstring = (*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (op->opresulttype) ||
+									 (*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (restype);
+
+			if (is_nstring || (*common_utility_plugin_ptr->is_tsql_varchar_datatype) (restype))
+			{
+				int32		len1 = tsql_string_operand_length(lexpr);
+				int32		len2 = tsql_string_operand_length(rexpr);
+
+				if (len1 != -1 && len2 != -1)
+				{
+					int32		maxlen = is_nstring ? 4000 : 8000;
+					int32		retlen = len1 + len2;
+
+					if (retlen > maxlen)
+						retlen = maxlen;
+
+					OpExp = coerce_to_target_type(pstate, OpExp,
+												 exprType(OpExp),
+												 op->opresulttype,
+												 retlen + VARHDRSZ,
+												 COERCION_EXPLICIT,
+												 COERCE_EXPLICIT_CAST,
+												 -1);
+				}
+			}
 		}
 
 		pfree(opname);
