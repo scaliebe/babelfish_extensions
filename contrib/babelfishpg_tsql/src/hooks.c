@@ -9488,6 +9488,8 @@ tsql_set_typmod_aggref(ParseState *pstate, Node *AggExp)
 	return AggExp;
 }
 
+static int32 tsql_string_func_result_length(FuncExpr *func, int32 maxlen);
+
 /*
  * Maximum length in characters of a string operand of the + operator, or -1
  * if it is not known or not limited (varchar(max)).
@@ -9500,23 +9502,54 @@ tsql_string_operand_length(Node *expr)
 	if (expr == NULL)
 		return -1;
 
-	/* look through casts that do not carry a length themselves */
+	/*
+	 * Look through casts that do not carry a length themselves, but only
+	 * those added by the parser, for example to the common type of the
+	 * arguments of COALESCE. A cast written in the statement has a location;
+	 * without a typmod it is a cast to (max).
+	 */
 	for (;;)
 	{
+		CoercionForm format;
+		int			location;
+		Node	   *arg;
+
 		if (exprTypmod(expr) != -1)
 			break;
 
 		if (IsA(expr, RelabelType))
-			expr = (Node *) ((RelabelType *) expr)->arg;
+		{
+			format = ((RelabelType *) expr)->relabelformat;
+			location = ((RelabelType *) expr)->location;
+			arg = (Node *) ((RelabelType *) expr)->arg;
+		}
 		else if (IsA(expr, CoerceViaIO))
-			expr = (Node *) ((CoerceViaIO *) expr)->arg;
-		else if (IsA(expr, FuncExpr) &&
-				 ((FuncExpr *) expr)->funcformat == COERCE_IMPLICIT_CAST &&
-				 list_length(((FuncExpr *) expr)->args) == 1)
-			expr = (Node *) linitial(((FuncExpr *) expr)->args);
+		{
+			format = ((CoerceViaIO *) expr)->coerceformat;
+			location = ((CoerceViaIO *) expr)->location;
+			arg = (Node *) ((CoerceViaIO *) expr)->arg;
+		}
+		else if (IsA(expr, CoerceToDomain))
+		{
+			format = ((CoerceToDomain *) expr)->coercionformat;
+			location = ((CoerceToDomain *) expr)->location;
+			arg = (Node *) ((CoerceToDomain *) expr)->arg;
+		}
+		else if (IsA(expr, FuncExpr) && ((FuncExpr *) expr)->args != NIL &&
+				 (((FuncExpr *) expr)->funcformat == COERCE_IMPLICIT_CAST ||
+				  ((FuncExpr *) expr)->funcformat == COERCE_EXPLICIT_CAST))
+		{
+			format = ((FuncExpr *) expr)->funcformat;
+			location = ((FuncExpr *) expr)->location;
+			arg = (Node *) linitial(((FuncExpr *) expr)->args);
+		}
 		else
 			break;
 
+		if (format != COERCE_IMPLICIT_CAST && location != -1)
+			return -1;
+
+		expr = arg;
 		if (expr == NULL)
 			return -1;
 	}
@@ -9536,6 +9569,10 @@ tsql_string_operand_length(Node *expr)
 		return -1;
 	}
 
+	/* the result of a string function that does not return a T-SQL string type, like STR() */
+	if (IsA(expr, FuncExpr))
+		return tsql_string_func_result_length((FuncExpr *) expr, 8000);
+
 	/* a string literal has the length of its value, at least 1 */
 	if (IsA(expr, Const) && !((Const *) expr)->constisnull)
 	{
@@ -9545,7 +9582,8 @@ tsql_string_operand_length(Node *expr)
 		if (con->consttype == UNKNOWNOID)
 			len = pg_mbstrlen(DatumGetCString(con->constvalue));
 		else if (con->constlen == -1 &&
-				 (con->consttype == TEXTOID ||
+				 (con->consttype == TEXTOID || con->consttype == VARCHAROID ||
+				  con->consttype == BPCHAROID ||
 				  (*common_utility_plugin_ptr->is_tsql_varchar_datatype) (getBaseType(con->consttype)) ||
 				  (*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (getBaseType(con->consttype))))
 		{
@@ -9560,6 +9598,189 @@ tsql_string_operand_length(Node *expr)
 	}
 
 	return -1;
+}
+
+/*
+ * Value of an integer constant argument, or -1 if the argument is not a
+ * non-negative integer constant.
+ */
+static int32
+tsql_int_const_arg(Node *expr)
+{
+	if (expr != NULL && IsA(expr, Const) &&
+		((Const *) expr)->consttype == INT4OID &&
+		!((Const *) expr)->constisnull &&
+		DatumGetInt32(((Const *) expr)->constvalue) >= 0)
+		return DatumGetInt32(((Const *) expr)->constvalue);
+
+	return -1;
+}
+
+/*
+ * Maximum length in characters of the result of a T-SQL string function, or
+ * -1 if it is not known or not limited. maxlen is the limit of the result
+ * type (8000 or 4000). The rules follow what SQL Server reports for the
+ * result of these functions.
+ */
+static int32
+tsql_string_func_result_length(FuncExpr *func, int32 maxlen)
+{
+	char	   *funcname;
+	int			nargs = list_length(func->args);
+	int32		len1;
+	int32		result = -1;
+
+	if (nargs == 0 || get_func_namespace(func->funcid) != get_namespace_oid("sys", true))
+		return -1;
+
+	funcname = get_func_name(func->funcid);
+	if (funcname == NULL)
+		return -1;
+
+	len1 = tsql_string_operand_length((Node *) linitial(func->args));
+
+	if (strcmp(funcname, "upper") == 0 || strcmp(funcname, "lower") == 0 ||
+		strcmp(funcname, "ltrim") == 0 || strcmp(funcname, "rtrim") == 0 ||
+		strcmp(funcname, "reverse") == 0 ||
+		(strcmp(funcname, "trim") == 0 && nargs == 1))
+		result = len1;
+	else if (strcmp(funcname, "trim") == 0 && nargs == 2)
+		result = tsql_string_operand_length((Node *) lsecond(func->args));
+	else if ((strcmp(funcname, "left") == 0 || strcmp(funcname, "right") == 0) && nargs == 2)
+	{
+		int32		count = tsql_int_const_arg((Node *) lsecond(func->args));
+
+		if (count > 0 && (len1 == -1 || count < len1))
+			result = count;
+		else
+			result = len1;
+	}
+	else if (strcmp(funcname, "substring") == 0 && nargs == 3)
+	{
+		int32		count = tsql_int_const_arg((Node *) lthird(func->args));
+
+		if (count > 0 && (len1 == -1 || count < len1))
+			result = count;
+		else
+			result = len1;
+	}
+	else if (strcmp(funcname, "replicate") == 0 && nargs == 2)
+	{
+		int32		count = tsql_int_const_arg((Node *) lsecond(func->args));
+
+		if (len1 == -1)
+			result = -1;
+		else if (count > 0 && count <= maxlen)
+			result = len1 * count;
+		else
+			result = maxlen;
+	}
+	else if (strcmp(funcname, "replace") == 0 && nargs == 3)
+		result = (len1 == -1) ? -1 : maxlen;
+	else if (strcmp(funcname, "space") == 0 && nargs == 1)
+	{
+		int32		count = tsql_int_const_arg((Node *) linitial(func->args));
+
+		result = (count > 0) ? count : maxlen;
+	}
+	else if (strcmp(funcname, "quotename") == 0)
+		result = 258;
+	else if (strcmp(funcname, "str") == 0)
+	{
+		int32		count = (nargs >= 2) ? tsql_int_const_arg((Node *) lsecond(func->args)) : 10;
+
+		result = (count > 0) ? count : -1;
+	}
+	else if (strcmp(funcname, "concat") == 0 && nargs == 1 && IsA(linitial(func->args), ArrayExpr))
+	{
+		ListCell   *lc;
+
+		result = 0;
+		foreach(lc, ((ArrayExpr *) linitial(func->args))->elements)
+		{
+			int32		len = tsql_string_operand_length((Node *) lfirst(lc));
+
+			if (len == -1)
+			{
+				result = -1;
+				break;
+			}
+			result += len;
+		}
+	}
+
+	pfree(funcname);
+
+	if (result > maxlen)
+		result = maxlen;
+	if (result == 0)
+		result = 1;
+	return result;
+}
+
+/*
+ * In the target list of a query, give the result of a string function or of
+ * COALESCE the length SQL Server reports for it. Without a typmod the column
+ * is described as varchar(max) to the client, which handles it as a LOB.
+ */
+static Node *
+tsql_set_typmod_string_expr(ParseState *pstate, Node *expr)
+{
+	Oid			restype = exprType(expr);
+	Oid			basetype;
+	bool		is_nstring;
+	int32		maxlen;
+	int32		len = -1;
+
+	if (pstate == NULL || pstate->p_expr_kind != EXPR_KIND_SELECT_TARGET ||
+		exprTypmod(expr) != -1)
+		return expr;
+
+	/* sys.nvarchar is a domain over sys.varchar, so check it before looking at the base type */
+	basetype = getBaseType(restype);
+	is_nstring = (*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (restype) ||
+		(*common_utility_plugin_ptr->is_tsql_nvarchar_datatype) (basetype);
+	if (!is_nstring && !(*common_utility_plugin_ptr->is_tsql_varchar_datatype) (basetype))
+		return expr;
+
+	maxlen = is_nstring ? 4000 : 8000;
+
+	if (IsA(expr, FuncExpr))
+		len = tsql_string_func_result_length((FuncExpr *) expr, maxlen);
+	else if (IsA(expr, CoalesceExpr))
+	{
+		ListCell   *lc;
+
+		foreach(lc, ((CoalesceExpr *) expr)->args)
+		{
+			Node	   *arg = (Node *) lfirst(lc);
+			int32		arglen;
+
+			/* a NULL argument does not contribute to the length */
+			if (IsA(arg, Const) && ((Const *) arg)->constisnull)
+				continue;
+
+			arglen = tsql_string_operand_length(arg);
+			if (arglen == -1)
+			{
+				len = -1;
+				break;
+			}
+			if (arglen > len)
+				len = arglen;
+		}
+	}
+
+	if (len == -1)
+		return expr;
+	if (len > maxlen)
+		len = maxlen;
+
+	return coerce_to_target_type(pstate, expr, restype, restype,
+								 len + VARHDRSZ,
+								 COERCION_EXPLICIT,
+								 COERCE_EXPLICIT_CAST,
+								 -1);
 }
 
 static Node*
@@ -9605,13 +9826,16 @@ tsql_set_typmod_op_expr(ParseState *pstate, Node *OpExp, Node *lexpr, Node* rexp
 										 COERCE_EXPLICIT_CAST,
 										 -1);
 		}
-		else if (strcmp(opname, "+") == 0)
+		else if (strcmp(opname, "+") == 0 && pstate != NULL &&
+				 pstate->p_expr_kind == EXPR_KIND_SELECT_TARGET)
 		{
 			/*
 			 * String concatenation: the result of varchar(n) + varchar(m) is
 			 * varchar(n + m) in T-SQL, limited to 8000 (4000 for nvarchar).
 			 * Without a typmod the result is described as varchar(max) to the
-			 * client, which then handles the column as a LOB.
+			 * client, which then handles the column as a LOB. This is limited
+			 * to the target list, so that conditions and expressions that have
+			 * to match an expression index are not changed.
 			 */
 			/* sys.nvarchar is a domain over sys.varchar, so check it before looking at the base type */
 			Oid			restype = getBaseType(op->opresulttype);
@@ -9620,8 +9844,13 @@ tsql_set_typmod_op_expr(ParseState *pstate, Node *OpExp, Node *lexpr, Node* rexp
 
 			if (is_nstring || (*common_utility_plugin_ptr->is_tsql_varchar_datatype) (restype))
 			{
-				int32		len1 = tsql_string_operand_length(lexpr);
-				int32		len2 = tsql_string_operand_length(rexpr);
+				/*
+				 * Use the operands as they are: lexpr and rexpr have been
+				 * stripped of RelabelType nodes, which would hide a cast to
+				 * (max) written in the statement.
+				 */
+				int32		len1 = tsql_string_operand_length((Node *) linitial(op->args));
+				int32		len2 = tsql_string_operand_length((Node *) lsecond(op->args));
 
 				if (len1 != -1 && len2 != -1)
 				{
@@ -9686,6 +9915,12 @@ pltsql_post_transform_expr_recurse(ParseState *pstate, Node *expr)
 		case T_Aggref:
 			{
 				expr = tsql_set_typmod_aggref(pstate, expr);
+				break;
+			}
+		case T_FuncExpr:
+		case T_CoalesceExpr:
+			{
+				expr = tsql_set_typmod_string_expr(pstate, expr);
 				break;
 			}
 

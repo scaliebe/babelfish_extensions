@@ -239,7 +239,7 @@ SELECT LEFT(@maxNVarchar, 50), LEN(@maxNVarchar) AS 'Total Length'
 GO
 ~~START~~
 nvarchar#!#int
-Long Text Long Text Long Text Long Text Long Text #!#9999
+Long Text Long Text Long Text Long Text Long Text #!#3999
 ~~END~~
 
 
@@ -472,7 +472,7 @@ SELECT
 GO
 ~~START~~
 varchar#!#int#!#int
-Test String Test String Test String Test String Te...#!#11999#!#12000
+Test String Test String Test String Test String Te...#!#8000#!#8000
 ~~END~~
 
 
