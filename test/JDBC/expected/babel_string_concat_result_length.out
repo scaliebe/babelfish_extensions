@@ -108,7 +108,7 @@ spc#!#varchar#!#6
 str_concat#!#varchar#!#13
 str5_concat#!#varchar#!#8
 concat_fn#!#varchar#!#34
-concat_int#!#varchar#!#-1
+concat_int#!#varchar#!#15
 qn#!#nvarchar#!#516
 rev#!#varchar#!#4
 up_max#!#varchar#!#-1
@@ -124,13 +124,245 @@ DE Deutschland#!#DE#!#xy#!#DE#!#Deutschland#!#Deuts#!#Deu#!#DEDE#!#   DE#!#     
 ~~END~~
 
 
--- only the target list gets the length; the same expression in a condition,
--- in GROUP BY and in ORDER BY still matches
+-- the same expression in a condition, in GROUP BY and in ORDER BY
 SELECT UPPER(code) AS u FROM babel_string_concat_len_t1 WHERE UPPER(code) = 'DE' AND code + name = 'DEDeutschland' GROUP BY UPPER(code) ORDER BY UPPER(code)
 GO
 ~~START~~
 varchar
 DE
+~~END~~
+
+
+-- aggregates: MIN and MAX keep the length of the argument, STRING_AGG is
+-- limited to 8000 (4000) unless the argument is (max)
+CREATE VIEW babel_string_concat_len_v3 AS
+SELECT MIN(code) AS mn, MAX(name) AS mx, MIN(nname) AS mn_n, MAX(big) AS mx_big, MIN(code + name) AS min_concat, MAX(LEFT(name, 3)) AS max_left,
+       RTRIM(MIN(code)) + ' ' + RTRIM(MIN(name)) AS agg_concat,
+       CASE WHEN COUNT(DISTINCT id) = 1 THEN RTRIM(MIN(code)) + ' ' + RTRIM(MIN(name)) ELSE CAST(COUNT(DISTINCT id) AS VARCHAR(20)) + ' rows' END AS case_agg,
+       COALESCE(MIN(code), '') AS coal_min, ISNULL(MAX(code), '-') AS isn_max, UPPER(MAX(code)) AS up_max,
+       STRING_AGG(code, ', ') AS sagg, STRING_AGG(nname, ',') AS sagg_n, STRING_AGG(big, ',') AS sagg_max,
+       STRING_AGG(CASE id WHEN 1 THEN 'one' ELSE '<unknown>' END, ', ') AS sagg_case,
+       STRING_AGG(code, ',') WITHIN GROUP (ORDER BY code) AS sagg_wg
+FROM babel_string_concat_len_t1
+GO
+
+SELECT name, TYPE_NAME(user_type_id) AS type_name, max_length
+FROM sys.columns WHERE object_id = OBJECT_ID('babel_string_concat_len_v3') ORDER BY column_id
+GO
+~~START~~
+varchar#!#nvarchar#!#smallint
+mn#!#varchar#!#3
+mx#!#varchar#!#30
+mn_n#!#nvarchar#!#20
+mx_big#!#varchar#!#-1
+min_concat#!#varchar#!#33
+max_left#!#varchar#!#3
+agg_concat#!#varchar#!#34
+case_agg#!#varchar#!#34
+coal_min#!#varchar#!#3
+isn_max#!#varchar#!#3
+up_max#!#varchar#!#3
+sagg#!#varchar#!#8000
+sagg_n#!#nvarchar#!#8000
+sagg_max#!#varchar#!#-1
+sagg_case#!#varchar#!#8000
+sagg_wg#!#varchar#!#8000
+~~END~~
+
+
+SELECT mn, mx, agg_concat, case_agg, sagg, sagg_case FROM babel_string_concat_len_v3
+GO
+~~START~~
+varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar
+DE#!#Deutschland#!#DE Deutschland#!#DE Deutschland#!#DE#!#one
+~~END~~
+
+
+-- more functions
+CREATE VIEW babel_string_concat_len_v4 AS
+SELECT STUFF(code, 1, 1, 'xy') AS stf, STUFF(code, 1, 1, NULL) AS stf_null, CONCAT_WS('-', code, name) AS cws, CONCAT_WS('-', code, NULL, name) AS cws_null,
+       TRANSLATE(code, 'ab', 'xy') AS trl, FORMAT(id, '000') AS fmt, CONCAT(code, id) AS concat_int, CONCAT(code, NULL, nname) AS concat_mixed,
+       DB_NAME() AS dbn, USER_NAME() AS usr
+FROM babel_string_concat_len_t1
+GO
+
+SELECT name, TYPE_NAME(user_type_id) AS type_name, max_length
+FROM sys.columns WHERE object_id = OBJECT_ID('babel_string_concat_len_v4') ORDER BY column_id
+GO
+~~START~~
+varchar#!#nvarchar#!#smallint
+stf#!#varchar#!#4
+stf_null#!#varchar#!#3
+cws#!#varchar#!#34
+cws_null#!#varchar#!#35
+trl#!#varchar#!#8000
+fmt#!#nvarchar#!#8000
+concat_int#!#varchar#!#15
+concat_mixed#!#nvarchar#!#26
+dbn#!#nvarchar#!#256
+usr#!#nvarchar#!#256
+~~END~~
+
+
+SELECT stf, stf_null, cws, cws_null, trl, concat_int, concat_mixed FROM babel_string_concat_len_v4
+GO
+~~START~~
+varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#varchar#!#nvarchar
+xyE#!#E#!#DE-Deutschland#!#DE-Deutschland#!#DE#!#DE1#!#DExy
+~~END~~
+
+
+-- STUFF: not more than what follows the start position is removed, and the
+-- result is not cut off
+CREATE VIEW babel_string_concat_len_v5 AS
+SELECT STUFF(name, 2, 0, code) AS s_ins, STUFF(name, 2, 3, code) AS s_repl, STUFF(name, 2, 100, code) AS s_tail, STUFF(name, 30, 1, code) AS s_last,
+       STUFF(name, 31, 1, code) AS s_beyond, STUFF(name, id, 1, code) AS s_var_start, STUFF(name, 2, id, code) AS s_var_len,
+       STUFF(name, 2, 3, '') AS s_empty, STUFF(nname, 2, 3, code) AS s_n, CONCAT_WS(NULL, code, name) AS cws_nullsep, CONCAT_WS(code, name, name, name) AS cws_colsep
+FROM babel_string_concat_len_t1
+GO
+
+SELECT name, TYPE_NAME(user_type_id) AS type_name, max_length
+FROM sys.columns WHERE object_id = OBJECT_ID('babel_string_concat_len_v5') ORDER BY column_id
+GO
+~~START~~
+varchar#!#nvarchar#!#smallint
+s_ins#!#varchar#!#33
+s_repl#!#varchar#!#30
+s_tail#!#varchar#!#4
+s_last#!#varchar#!#32
+s_beyond#!#varchar#!#8000
+s_var_start#!#varchar#!#8000
+s_var_len#!#varchar#!#8000
+s_empty#!#varchar#!#28
+s_n#!#nvarchar#!#20
+cws_nullsep#!#varchar#!#33
+cws_colsep#!#varchar#!#96
+~~END~~
+
+
+SELECT STUFF(N'abcdef', 2, 7, N'ijklmn') AS s1, STUFF('abcdef', 2, 0, 'ijklmn') AS s2, STUFF('abcdef', 6, 1, 'ijklmn') AS s3, STUFF('abcdef', 1, 6, 'ijklmn') AS s4
+GO
+~~START~~
+nvarchar#!#varchar#!#varchar#!#varchar
+aijklmn#!#aijklmnbcdef#!#abcdeijklmn#!#ijklmn
+~~END~~
+
+
+-- COLLATE with a collation of a multi-byte code page: the length in bytes is
+-- not known, the expression stays (max)
+CREATE VIEW babel_string_concat_len_v6 AS
+SELECT STUFF(name, 2, 3, code) COLLATE chinese_prc_ci_as AS stf_mb, (code + name) COLLATE chinese_prc_ci_as AS concat_mb,
+       (code + name) COLLATE latin1_general_ci_as AS concat_sb, '|' + RTRIM(name) COLLATE chinese_prc_ci_as + '|' AS nested_mb
+FROM babel_string_concat_len_t1
+GO
+
+SELECT name, TYPE_NAME(user_type_id) AS type_name, max_length
+FROM sys.columns WHERE object_id = OBJECT_ID('babel_string_concat_len_v6') ORDER BY column_id
+GO
+~~START~~
+varchar#!#nvarchar#!#smallint
+stf_mb#!#varchar#!#-1
+concat_mb#!#varchar#!#-1
+concat_sb#!#varchar#!#33
+nested_mb#!#varchar#!#-1
+~~END~~
+
+
+SELECT stf_mb, concat_mb, concat_sb, nested_mb FROM babel_string_concat_len_v6
+GO
+~~START~~
+varchar#!#varchar#!#varchar#!#varchar
+DDEschland#!#DEDeutschland#!#DEDeutschland#!#|Deutschland|
+~~END~~
+
+
+-- the expression of the target list is found again in ORDER BY, GROUP BY,
+-- HAVING and window clauses, also with DISTINCT
+SELECT DISTINCT COALESCE(code, '') AS c FROM babel_string_concat_len_t1 WHERE COALESCE(code, '') <> 'x' ORDER BY COALESCE(code, '') ASC
+GO
+~~START~~
+varchar
+DE
+~~END~~
+
+
+SELECT DISTINCT code + name AS cn FROM babel_string_concat_len_t1 ORDER BY code + name
+GO
+~~START~~
+varchar
+DEDeutschland
+~~END~~
+
+
+SELECT DISTINCT UPPER(code) AS u, LEFT(name, 3) AS l FROM babel_string_concat_len_t1 ORDER BY LEFT(name, 3) DESC, UPPER(code)
+GO
+~~START~~
+varchar#!#varchar
+DE#!#Deu
+~~END~~
+
+
+SELECT code + '-' + name AS cn, COUNT(*) AS cnt FROM babel_string_concat_len_t1 GROUP BY code + '-' + name ORDER BY code + '-' + name
+GO
+~~START~~
+varchar#!#int
+DE-Deutschland#!#1
+~~END~~
+
+
+SELECT RTRIM(code) AS c, MAX(name) AS m FROM babel_string_concat_len_t1 GROUP BY RTRIM(code) HAVING RTRIM(code) <> '' ORDER BY MAX(name), RTRIM(code)
+GO
+~~START~~
+varchar#!#varchar
+DE#!#Deutschland
+~~END~~
+
+
+SELECT code FROM babel_string_concat_len_t1 ORDER BY UPPER(code) + name
+GO
+~~START~~
+varchar
+DE
+~~END~~
+
+
+SELECT code + name AS cn, ROW_NUMBER() OVER (PARTITION BY UPPER(code) ORDER BY code + name) AS rn FROM babel_string_concat_len_t1 GROUP BY code + name, UPPER(code) HAVING code + name <> '' ORDER BY code + name
+GO
+~~START~~
+varchar#!#bigint
+DEDeutschland#!#1
+~~END~~
+
+
+SELECT DISTINCT COALESCE(code, '') + '/' + RTRIM(name) AS c FROM babel_string_concat_len_t1 GROUP BY COALESCE(code, ''), RTRIM(name) HAVING COALESCE(code, '') <> '' ORDER BY COALESCE(code, '') + '/' + RTRIM(name)
+GO
+~~START~~
+varchar
+DE/Deutschland
+~~END~~
+
+
+SELECT MIN(code) AS m FROM babel_string_concat_len_t1 GROUP BY name ORDER BY MIN(code), STRING_AGG(code, ',')
+GO
+~~START~~
+varchar
+DE
+~~END~~
+
+
+SELECT code + '-' + name AS cn, UPPER(code + '-' + name) AS ucn, RANK() OVER (ORDER BY code + '-' + name) AS rk FROM babel_string_concat_len_t1 WHERE code + '-' + name <> '' GROUP BY code + '-' + name HAVING code + '-' + name <> '' AND MAX(RTRIM(name) + code) <> ''
+GO
+~~START~~
+varchar#!#varchar#!#bigint
+DE-Deutschland#!#DE-DEUTSCHLAND#!#1
+~~END~~
+
+
+SELECT x.cn FROM (SELECT code + '-' + name AS cn FROM babel_string_concat_len_t1 GROUP BY code + '-' + name) x JOIN babel_string_concat_len_t1 t ON x.cn = t.code + '-' + t.name
+GO
+~~START~~
+varchar
+DE-Deutschland
 ~~END~~
 
 
@@ -154,6 +386,18 @@ int#!#numeric#!#int
 
 
 DROP TABLE babel_string_concat_len_t2
+GO
+
+DROP VIEW babel_string_concat_len_v6
+GO
+
+DROP VIEW babel_string_concat_len_v5
+GO
+
+DROP VIEW babel_string_concat_len_v4
+GO
+
+DROP VIEW babel_string_concat_len_v3
 GO
 
 DROP VIEW babel_string_concat_len_v2
