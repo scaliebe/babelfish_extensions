@@ -1,6 +1,9 @@
 #include "postgres.h"
 
 #include "mb/pg_wchar.h"
+#include "access/htup_details.h"
+#include "catalog/namespace.h"
+#include "catalog/pg_proc.h"
 #include "miscadmin.h"
 #include "nodes/parsenodes.h"
 #include "nodes/primnodes.h"
@@ -12,6 +15,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
+#include "utils/lsyscache.h"
 #include "utils/syscache.h"
 
 #include "catalog.h"
@@ -38,6 +42,10 @@ static bool rewrite_relation_walker(Node *node, void *context);
 static bool is_select_for_json(SelectStmt *stmt);
 static void select_json_modify(SelectStmt *stmt);
 static bool is_for_json(FuncCall *fc);
+static void qualify_builtin_function_name(FuncCall *func);
+
+/* walker context for expressions in the definition of an object */
+static bool rewrite_in_definition = true;
 static bool get_array_wrapper(List *for_json_args);
 
 
@@ -115,7 +123,7 @@ rewrite_object_refs(Node *stmt)
 							{
 								ColumnDef  *def = (ColumnDef *) cmd->def;
 
-								rewrite_relation_walker((Node *) def, (void *) NULL);
+								rewrite_relation_walker((Node *) def, (void *) &rewrite_in_definition);
 								break;
 							}
 						case AT_AddColumn:
@@ -128,7 +136,7 @@ rewrite_object_refs(Node *stmt)
 								{
 									Constraint *constraint = lfirst_node(Constraint, clist);
 
-									rewrite_relation_walker(constraint->raw_expr, (void *) NULL);
+									rewrite_relation_walker(constraint->raw_expr, (void *) &rewrite_in_definition);
 
 									if (constraint->contype == CONSTR_FOREIGN)
 										rewrite_rangevar(constraint->pktable);
@@ -146,7 +154,7 @@ rewrite_object_refs(Node *stmt)
 							{
 								Constraint *constraint = (Constraint *) cmd->def;
 
-								rewrite_relation_walker(constraint->raw_expr, (void *) NULL);
+								rewrite_relation_walker(constraint->raw_expr, (void *) &rewrite_in_definition);
 
 								if (constraint->contype == CONSTR_FOREIGN)
 									rewrite_rangevar(constraint->pktable);
@@ -293,7 +301,7 @@ rewrite_object_refs(Node *stmt)
 								{
 									Constraint *constraint = lfirst_node(Constraint, clist);
 
-									rewrite_relation_walker(constraint->raw_expr, (void *) NULL);
+									rewrite_relation_walker(constraint->raw_expr, (void *) &rewrite_in_definition);
 
 									if (constraint->contype == CONSTR_FOREIGN)
 										rewrite_rangevar(constraint->pktable);
@@ -462,7 +470,7 @@ rewrite_object_refs(Node *stmt)
 					typename->names = rewrite_plain_name(typename->names);
 
 					/* default value */
-					rewrite_relation_walker(p->defexpr, (void *) NULL);
+					rewrite_relation_walker(p->defexpr, (void *) &rewrite_in_definition);
 				}
 
 				create_func->funcname = rewrite_plain_name(create_func->funcname);
@@ -707,6 +715,14 @@ rewrite_relation_walker(Node *node, void *context)
 		FuncCall   *func = (FuncCall *) node;
 
 		rewrite_plain_name(func->funcname);
+
+		/*
+		 * Not in the definition of a column default, a constraint or a
+		 * parameter default: the default of a temporary table has its own
+		 * check for built-in functions, which does not accept a schema name.
+		 */
+		if (context == NULL)
+			qualify_builtin_function_name(func);
 		return raw_expression_tree_walker(node, rewrite_relation_walker, context);
 	}
 	if (IsA(node, TypeName))
@@ -718,6 +734,68 @@ rewrite_relation_walker(Node *node, void *context)
 	}
 	else
 		return raw_expression_tree_walker(node, rewrite_relation_walker, context);
+}
+
+/*
+ * In T-SQL a scalar user-defined function can only be called with its schema
+ * name, so a function call without schema name is a call of the built-in
+ * function, also if the user has a function of the same name: with
+ * dbo.concat(varchar, varchar), CONCAT(a, b) is still the built-in CONCAT.
+ * The search path has the schema of the user before sys, and the function of
+ * the user is often the better match for the arguments. If a function of that
+ * name exists in sys and in a user schema of the search path, qualify the call
+ * with sys. Nothing changes as long as the names do not collide.
+ */
+static void
+qualify_builtin_function_name(FuncCall *func)
+{
+	char	   *name;
+	Oid			sys_nspoid;
+	List	   *search_path;
+	CatCList   *catlist;
+	bool		in_sys = false;
+	bool		in_user_schema = false;
+	int			i;
+
+	if (list_length(func->funcname) != 1)
+		return;
+
+	name = strVal(linitial(func->funcname));
+	sys_nspoid = get_namespace_oid("sys", true);
+	if (!OidIsValid(sys_nspoid))
+		return;
+
+	catlist = SearchSysCacheList1(PROCNAMEARGSNSP, CStringGetDatum(name));
+	if (catlist->n_members < 2)
+	{
+		ReleaseSysCacheList(catlist);
+		return;
+	}
+
+	search_path = fetch_search_path(false);
+
+	for (i = 0; i < catlist->n_members; i++)
+	{
+		Form_pg_proc procform = (Form_pg_proc) GETSTRUCT(&catlist->members[i]->tuple);
+
+		if (procform->pronamespace == sys_nspoid)
+			in_sys = true;
+		else if (list_member_oid(search_path, procform->pronamespace))
+		{
+			char	   *nspname = get_namespace_name(procform->pronamespace);
+
+			if (nspname != NULL && !is_shared_schema(nspname))
+				in_user_schema = true;
+			if (nspname != NULL)
+				pfree(nspname);
+		}
+	}
+
+	ReleaseSysCacheList(catlist);
+	list_free(search_path);
+
+	if (in_sys && in_user_schema)
+		func->funcname = list_make2(makeString(pstrdup("sys")), linitial(func->funcname));
 }
 
 /*
