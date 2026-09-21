@@ -1081,7 +1081,12 @@ SendColInfoToken(int natts, bool sendRowStat)
 
 			resetStringInfo(&tempBuf);
 
-			if (strcmp(col->baseColName, col->colName.data) != 0)
+			/*
+			 * The name of the column in the catalog is in lower case, the
+			 * name in the result has the case the user wrote. That is not
+			 * a different name.
+			 */
+			if (pg_strcasecmp(col->baseColName, col->colName.data) != 0)
 				status |= COLUMN_STATUS_DIFFERENT_NAME;
 
 			{
@@ -2264,12 +2269,20 @@ TdsSendRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt,
 	}
 
 	SendColumnMetadataToken(typeinfo->natts, false);
+
+	/*
+	 * With SET NO_BROWSETABLE ON the client asks for the base tables and
+	 * columns of the result, which it needs to update the rows. The table
+	 * numbers in the COLINFO token refer to the tables of the TABNAME token,
+	 * so that one has to be sent first, like for a cursor.
+	 */
 	if (relMetaDataInfoList != NIL && pltsql_plugin_handler_ptr &&
 		pltsql_plugin_handler_ptr->pltsql_no_browsetable &&
 		(*pltsql_plugin_handler_ptr->pltsql_no_browsetable))
-    {
-        SendColInfoToken(typeinfo->natts, false);
-    }
+	{
+		SendTabNameToken();
+		SendColInfoToken(typeinfo->natts, false);
+	}
 }
 
 bool
