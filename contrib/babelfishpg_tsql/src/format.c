@@ -29,6 +29,7 @@
 #include "utils/datetime.h"
 #include "catalog/pg_type_d.h"
 #include "utils/guc.h"
+#include "utils/pg_locale.h"
 
 #include "catalog/pg_collation.h"
 
@@ -173,6 +174,7 @@ format_numeric(PG_FUNCTION_ARGS)
 	char		real_pattern[120];
 	char		upper_pattern;
 	const char *format_re = "^[cdefgnprxCDEFGNPRX]{1}[0-9]*$";
+	bool		is_custom = false;
 	VarChar    *result;
 
 	if (PG_ARGISNULL(0))
@@ -184,7 +186,18 @@ format_numeric(PG_FUNCTION_ARGS)
 
 	format_pattern = text_to_cstring(PG_GETARG_TEXT_P(1));
 
+	/* without a format string the number is formatted like with "G" */
+	if (format_pattern[0] == '\0')
+		format_pattern = pstrdup("G");
+
+	/*
+	 * A letter followed by up to two digits is a standard format string,
+	 * everything else is a custom one like "00" or "#,##0.00".
+	 */
 	if (match(format_pattern, format_re) == 0)
+		is_custom = (match(format_pattern, "^[a-zA-Z][0-9]{0,2}$") == 0);
+
+	if (match(format_pattern, format_re) == 0 && !is_custom)
 	{
 		ereport(ERROR,
 				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -193,9 +206,10 @@ format_numeric(PG_FUNCTION_ARGS)
 				 errhint("Change \"format\" parameter value and try again.")));
 	}
 
-	pattern = format_pattern[0];
+	/* a custom format string has no format specifier, also if it starts with a letter */
+	pattern = is_custom ? '\0' : format_pattern[0];
 	upper_pattern = toupper(pattern);
-	precision_string = TextDatumGetCString(DirectFunctionCall2(text_substr_no_len, PG_GETARG_DATUM(1), Int32GetDatum((int32) 2)));
+	precision_string = TextDatumGetCString(DirectFunctionCall2(text_substr_no_len, CStringGetTextDatum(format_pattern), Int32GetDatum((int32) 2)));
 
 	data_type = text_to_cstring(PG_GETARG_TEXT_P(3));
 	arg_type_oid = get_fn_expr_argtype(fcinfo->flinfo, 0);
@@ -308,6 +322,17 @@ format_numeric(PG_FUNCTION_ARGS)
 			break;
 	}
 
+	if (is_custom)
+	{
+		/* the result can be an empty string, like for FORMAT(0, '#') */
+		format_custom_numeric(numeric_val, format_res, format_pattern);
+		result = (*common_utility_plugin_ptr->tsql_varchar_input) (format_res->data, format_res->len, -1);
+
+		pfree(format_res->data);
+		pfree(format_res);
+		PG_RETURN_VARCHAR_P(result);
+	}
+
 	format_numeric_handler(datum_val, numeric_val, format_res, pattern, precision_string, arg_type_oid, culture, valid_culture, data_type);
 
 	if (format_res->len > 0)
@@ -322,6 +347,456 @@ format_numeric(PG_FUNCTION_ARGS)
 	pfree(format_res->data);
 	pfree(format_res);
 	PG_RETURN_NULL();
+}
+
+/*
+ * Custom numeric format strings ("00", "#,##0.00", "0.0%", "0.00E+0",
+ * "pos;neg;zero"), as opposed to the standard ones that consist of a letter
+ * and a precision. The rules are those of .NET, which SQL Server uses for
+ * FORMAT():
+ *
+ *   0       digit, or 0 if the number has no digit at this position
+ *   #       digit, or nothing
+ *   .       the first one is the decimal separator of the culture
+ *   ,       between digit placeholders: group separator of the culture;
+ *           directly before the decimal point: divides the number by 1000
+ *   %       multiplies by 100, per mille sign multiplies by 1000
+ *   E+0     exponential notation (E0, E+0, E-0, e0, e+0, e-0)
+ *   \c      the character c as it is
+ *   'abc'   the text as it is, also with double quotes
+ *   ;       separates the sections for positive, negative and zero values
+ *
+ * Every other character is copied to the result.
+ */
+
+/* the per mille sign U+2030 in UTF-8 */
+#define IS_PER_MILLE(s) ((unsigned char) (s)[0] == 0xE2 && \
+						 (unsigned char) (s)[1] == 0x80 && \
+						 (unsigned char) (s)[2] == 0xB0)
+
+/*
+ * Start of the given section (0 positive, 1 negative, 2 zero) of a custom
+ * numeric format string. A section that is missing or empty is replaced by
+ * the first one.
+ */
+static int
+custom_numeric_find_section(const char *format, int section)
+{
+	int			src = 0;
+	char		ch;
+
+	if (section == 0)
+		return 0;
+
+	while ((ch = format[src]) != '\0')
+	{
+		src++;
+		switch (ch)
+		{
+			case '\'':
+			case '"':
+				while (format[src] != '\0' && format[src++] != ch)
+					;
+				break;
+			case '\\':
+				if (format[src] != '\0')
+					src++;
+				break;
+			case ';':
+				if (--section != 0)
+					break;
+				if (format[src] != '\0' && format[src] != ';')
+					return src;
+				return 0;
+			default:
+				break;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Round the digits of a number to pos digits, half away from zero. digits is
+ * a string of decimal digits without leading and trailing zeros, *scale the
+ * number of digits before the decimal point.
+ */
+static void
+custom_numeric_round(char *digits, int *scale, int pos)
+{
+	int			len = strlen(digits);
+	int			i;
+
+	if (pos >= len)
+		return;
+
+	if (pos < 0 || digits[pos] < '5')
+	{
+		/* round down */
+		i = (pos < 0) ? 0 : pos;
+	}
+	else
+	{
+		/* round up, with carry */
+		i = pos;
+		while (i > 0 && digits[i - 1] == '9')
+			i--;
+
+		if (i > 0)
+			digits[i - 1]++;
+		else
+		{
+			digits[0] = '1';
+			i = 1;
+			(*scale)++;
+		}
+	}
+
+	while (i > 0 && digits[i - 1] == '0')
+		i--;
+	digits[i] = '\0';
+
+	if (i == 0)
+		*scale = 0;
+}
+
+static void
+format_custom_numeric(Numeric numeric_val, StringInfo format_res, const char *format)
+{
+	struct lconv *lconv = PGLC_localeconv();
+	const char *decimal_sep = ".";
+	const char *group_sep = ",";
+	char	   *numstr = numeric_text(numeric_val);
+	char	   *digits;
+	char	   *cur;
+	char	   *p;
+	bool		negative = false;
+	int			scale = 0;
+	int			ndigits = 0;
+	int			section;
+	int			src;
+	char		ch;
+
+	/* results of scanning the section */
+	int			digit_count;
+	int			decimal_pos;
+	int			first_digit;
+	int			last_digit;
+	int			scale_adjust;
+	bool		thousand_seps;
+	bool		scientific;
+
+	int			dig_pos;
+	int			adjust;
+	bool		decimal_written = false;
+
+	resetStringInfo(format_res);
+
+	/* same choice of separators as numeric_to_char() */
+	if (lconv->decimal_point && *lconv->decimal_point)
+		decimal_sep = lconv->decimal_point;
+	if (lconv->thousands_sep && *lconv->thousands_sep)
+		group_sep = lconv->thousands_sep;
+	else if (strcmp(decimal_sep, ",") == 0)
+		group_sep = ".";
+
+	if (*numstr == '-')
+	{
+		negative = true;
+		numstr++;
+	}
+
+	/* NaN and Infinity */
+	if (!isdigit((unsigned char) *numstr) && *numstr != '.')
+	{
+		if (negative)
+			appendStringInfoChar(format_res, '-');
+		appendStringInfoString(format_res, numstr);
+		return;
+	}
+
+	/* the digits without decimal point, leading and trailing zeros */
+	digits = palloc(strlen(numstr) + 2);
+	for (p = numstr; *p; p++)
+	{
+		if (*p == '.')
+			break;
+		if (ndigits > 0 || *p != '0')
+		{
+			digits[ndigits++] = *p;
+			scale++;
+		}
+	}
+	if (*p == '.')
+	{
+		for (p++; *p; p++)
+		{
+			if (ndigits > 0 || *p != '0')
+				digits[ndigits++] = *p;
+			else
+				scale--;
+		}
+	}
+	while (ndigits > 0 && digits[ndigits - 1] == '0')
+		ndigits--;
+	digits[ndigits] = '\0';
+	if (ndigits == 0)
+	{
+		scale = 0;
+		negative = false;
+	}
+
+	section = custom_numeric_find_section(format, ndigits == 0 ? 2 : (negative ? 1 : 0));
+
+	for (;;)
+	{
+		int			thousand_pos = -1;
+		int			thousand_count = 0;
+
+		digit_count = 0;
+		decimal_pos = -1;
+		first_digit = INT_MAX;
+		last_digit = 0;
+		scale_adjust = 0;
+		thousand_seps = false;
+		scientific = false;
+
+		src = section;
+		while ((ch = format[src]) != '\0' && ch != ';')
+		{
+			src++;
+			switch (ch)
+			{
+				case '#':
+					digit_count++;
+					break;
+				case '0':
+					if (first_digit == INT_MAX)
+						first_digit = digit_count;
+					digit_count++;
+					last_digit = digit_count;
+					break;
+				case '.':
+					if (decimal_pos < 0)
+						decimal_pos = digit_count;
+					break;
+				case ',':
+					if (digit_count > 0 && decimal_pos < 0)
+					{
+						if (thousand_pos >= 0)
+						{
+							if (thousand_pos == digit_count)
+							{
+								thousand_count++;
+								break;
+							}
+							thousand_seps = true;
+						}
+						thousand_pos = digit_count;
+						thousand_count = 1;
+					}
+					break;
+				case '%':
+					scale_adjust += 2;
+					break;
+				case '\'':
+				case '"':
+					while (format[src] != '\0' && format[src++] != ch)
+						;
+					break;
+				case '\\':
+					if (format[src] != '\0')
+						src++;
+					break;
+				case 'E':
+				case 'e':
+					if (format[src] == '0' ||
+						((format[src] == '+' || format[src] == '-') && format[src + 1] == '0'))
+					{
+						while (format[++src] == '0')
+							;
+						scientific = true;
+					}
+					break;
+				default:
+					if (IS_PER_MILLE(&format[src - 1]))
+					{
+						scale_adjust += 3;
+						src += 2;
+					}
+					break;
+			}
+		}
+
+		if (decimal_pos < 0)
+			decimal_pos = digit_count;
+
+		if (thousand_pos >= 0)
+		{
+			if (thousand_pos == decimal_pos)
+				scale_adjust -= thousand_count * 3;
+			else
+				thousand_seps = true;
+		}
+
+		if (ndigits > 0)
+		{
+			scale += scale_adjust;
+			custom_numeric_round(digits, &scale,
+								 scientific ? digit_count : scale + digit_count - decimal_pos);
+			ndigits = strlen(digits);
+
+			if (ndigits == 0)
+			{
+				/* rounded to zero: use the section for zero, if there is one */
+				int			zero_section = custom_numeric_find_section(format, 2);
+
+				negative = false;
+				if (zero_section != section)
+				{
+					section = zero_section;
+					continue;
+				}
+			}
+		}
+		break;
+	}
+
+	/* number of digits 0 has to produce before and after the decimal point */
+	first_digit = (first_digit < decimal_pos) ? decimal_pos - first_digit : 0;
+	last_digit = (last_digit > decimal_pos) ? decimal_pos - last_digit : 0;
+
+	if (scientific)
+	{
+		dig_pos = decimal_pos;
+		adjust = 0;
+	}
+	else
+	{
+		dig_pos = (scale > decimal_pos) ? scale : decimal_pos;
+		adjust = scale - decimal_pos;
+	}
+
+	/* a negative number formatted with the first section gets its sign */
+	if (negative && section == 0)
+		appendStringInfoChar(format_res, '-');
+
+	cur = digits;
+	src = section;
+	while ((ch = format[src]) != '\0' && ch != ';')
+	{
+		src++;
+
+		/* digits the placeholders before the decimal point have no room for */
+		if (adjust > 0 && (ch == '#' || ch == '0' || ch == '.'))
+		{
+			while (adjust > 0)
+			{
+				appendStringInfoChar(format_res, *cur ? *cur++ : '0');
+				if (thousand_seps && dig_pos > 1 && (dig_pos - 1) % 3 == 0)
+					appendStringInfoString(format_res, group_sep);
+				dig_pos--;
+				adjust--;
+			}
+		}
+
+		switch (ch)
+		{
+			case '#':
+			case '0':
+				{
+					char		digit;
+
+					if (adjust < 0)
+					{
+						adjust++;
+						digit = (dig_pos <= first_digit) ? '0' : '\0';
+					}
+					else
+						digit = *cur ? *cur++ : ((dig_pos > last_digit) ? '0' : '\0');
+
+					if (digit != '\0')
+					{
+						appendStringInfoChar(format_res, digit);
+						if (thousand_seps && dig_pos > 1 && (dig_pos - 1) % 3 == 0)
+							appendStringInfoString(format_res, group_sep);
+					}
+					dig_pos--;
+					break;
+				}
+			case '.':
+				if (dig_pos != 0 || decimal_written)
+					break;
+				if (last_digit < 0 || (decimal_pos < digit_count && *cur))
+				{
+					appendStringInfoString(format_res, decimal_sep);
+					decimal_written = true;
+				}
+				break;
+			case ',':
+				break;
+			case '\'':
+			case '"':
+				while (format[src] != '\0' && format[src] != ch)
+					appendStringInfoChar(format_res, format[src++]);
+				if (format[src] != '\0')
+					src++;
+				break;
+			case '\\':
+				if (format[src] != '\0')
+					appendStringInfoChar(format_res, format[src++]);
+				break;
+			case 'E':
+			case 'e':
+				if (scientific)
+				{
+					bool		positive_sign = false;
+					int			min_digits = 0;
+					int			exponent = (ndigits == 0) ? 0 : scale - decimal_pos;
+
+					if (format[src] == '0')
+						min_digits++;
+					else if (format[src] == '+' && format[src + 1] == '0')
+						positive_sign = true;
+					else if (!(format[src] == '-' && format[src + 1] == '0'))
+					{
+						appendStringInfoChar(format_res, ch);
+						break;
+					}
+
+					while (format[++src] == '0')
+						min_digits++;
+					if (min_digits > 10)
+						min_digits = 10;
+
+					appendStringInfoChar(format_res, ch);
+					if (exponent < 0)
+					{
+						appendStringInfoChar(format_res, '-');
+						exponent = -exponent;
+					}
+					else if (positive_sign)
+						appendStringInfoChar(format_res, '+');
+					appendStringInfo(format_res, "%0*d", min_digits, exponent);
+
+					scientific = false;
+				}
+				else
+				{
+					appendStringInfoChar(format_res, ch);
+					if (format[src] == '+' || format[src] == '-')
+						appendStringInfoChar(format_res, format[src++]);
+					while (format[src] == '0')
+						appendStringInfoChar(format_res, format[src++]);
+				}
+				break;
+			default:
+				appendStringInfoChar(format_res, ch);
+				break;
+		}
+	}
+
+	pfree(digits);
 }
 
 static void
