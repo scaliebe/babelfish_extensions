@@ -1,0 +1,91 @@
+CREATE TABLE babel_dup_select_t (nummer INT PRIMARY KEY, bezeichnung VARCHAR(40), betrag NUMERIC(12,2), datum DATETIME, nname NVARCHAR(20))
+GO
+
+CREATE TABLE babel_dup_select_t2 (id INT, nummer INT)
+GO
+
+-- a parameter in the WHERE clause of a SELECT from one table
+EXEC sys.sp_describe_undeclared_parameters N'select * from babel_dup_select_t where nummer=@P1 order by Nummer'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+1#!#@p1#!#56#!#int#!#4#!#10#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#38#!#4
+~~END~~
+
+
+EXEC sys.sp_describe_undeclared_parameters N'SELECT nummer, bezeichnung FROM dbo.babel_dup_select_t WHERE bezeichnung = @P1 AND betrag > @P2 AND datum <= @P3 AND nname = @P4'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+1#!#@p1#!#167#!#varchar(40)#!#40#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#167#!#40
+2#!#@p2#!#108#!#numeric(12,2)#!#9#!#12#!#2#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#108#!#17
+3#!#@p3#!#61#!#datetime#!#8#!#23#!#3#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#111#!#8
+4#!#@p4#!#231#!#nvarchar(20)#!#40#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#231#!#40
+~~END~~
+
+
+-- with a table alias
+EXEC sys.sp_describe_undeclared_parameters N'SELECT t.nummer FROM babel_dup_select_t t WHERE t.bezeichnung = @P1 AND t.nummer = @P2'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+1#!#@p1#!#167#!#varchar(40)#!#40#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#167#!#40
+2#!#@p2#!#56#!#int#!#4#!#10#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#38#!#4
+~~END~~
+
+
+-- a column that does not exist
+EXEC sys.sp_describe_undeclared_parameters N'SELECT nummer FROM babel_dup_select_t WHERE nosuchcolumn = @P1'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: column "nosuchcolumn" of relation "babel_dup_select_t" does not exist)~~
+
+
+-- not supported, empty result: join, no WHERE clause, UNION
+EXEC sys.sp_describe_undeclared_parameters N'SELECT t.nummer FROM babel_dup_select_t t JOIN babel_dup_select_t2 t2 ON t2.nummer = t.nummer WHERE t.nummer = @P1'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+~~END~~
+
+
+EXEC sys.sp_describe_undeclared_parameters N'SELECT nummer FROM babel_dup_select_t'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+~~END~~
+
+
+EXEC sys.sp_describe_undeclared_parameters N'SELECT nummer FROM babel_dup_select_t WHERE nummer = @P1 UNION ALL SELECT nummer FROM babel_dup_select_t2 WHERE nummer = @P2'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+~~END~~
+
+
+-- UPDATE and DELETE with a qualified column name
+EXEC sys.sp_describe_undeclared_parameters N'DELETE FROM babel_dup_select_t WHERE babel_dup_select_t.nummer = @P1'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+1#!#@p1#!#56#!#int#!#4#!#10#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#38#!#4
+~~END~~
+
+
+EXEC sys.sp_describe_undeclared_parameters N'UPDATE babel_dup_select_t SET bezeichnung = @P1 WHERE babel_dup_select_t.nummer = @P2'
+GO
+~~START~~
+int#!#varchar#!#int#!#nvarchar#!#smallint#!#tinyint#!#tinyint#!#int#!#varchar#!#varchar#!#varchar#!#nvarchar#!#int#!#varchar#!#varchar#!#varchar#!#bit#!#bit#!#bit#!#bit#!#bit#!#varchar#!#int#!#int
+1#!#@p1#!#167#!#varchar(40)#!#40#!#0#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#167#!#40
+2#!#@p2#!#56#!#int#!#4#!#10#!#0#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#<NULL>#!#0#!#0#!#0#!#1#!#0#!#<NULL>#!#38#!#4
+~~END~~
+
+
+DROP TABLE babel_dup_select_t2
+GO
+
+DROP TABLE babel_dup_select_t
+GO

@@ -676,7 +676,7 @@ handle_where_clause_attnums(ParseState *pstate, Node *w_clause, List *target_att
 			}
 		}
 		ref = (ColumnRef *) where_clause->lexpr;
-		field = linitial(ref->fields);
+		field = llast(ref->fields);
 		name = field->sval;
 		attrno = attnameAttNum(pstate->p_target_relation, name, false);
 		if (attrno == InvalidAttrNumber)
@@ -715,7 +715,7 @@ handle_where_clause_attnums(ParseState *pstate, Node *w_clause, List *target_att
 							}
 						}
 						ref = (ColumnRef *) xpr->lexpr;
-						field = linitial(ref->fields);
+						field = llast(ref->fields);
 						name = field->sval;
 						attrno = attnameAttNum(pstate->p_target_relation, name, false);
 						if (attrno == InvalidAttrNumber)
@@ -778,7 +778,7 @@ handle_where_clause_restargets_left(ParseState *pstate, Node *w_clause, List *ex
 			}
 		}
 		ref = (ColumnRef *) where_clause->lexpr;
-		field = linitial(ref->fields);
+		field = llast(ref->fields);
 		name = field->sval;
 		attrno = attnameAttNum(pstate->p_target_relation, name, false);
 		if (attrno == InvalidAttrNumber)
@@ -824,7 +824,7 @@ handle_where_clause_restargets_left(ParseState *pstate, Node *w_clause, List *ex
 							}
 						}
 						ref = (ColumnRef *) xpr->lexpr;
-						field = linitial(ref->fields);
+						field = llast(ref->fields);
 						name = field->sval;
 						attrno = attnameAttNum(pstate->p_target_relation, name, false);
 						if (attrno == InvalidAttrNumber)
@@ -1163,6 +1163,35 @@ sp_describe_undeclared_parameters_internal(PG_FUNCTION_ARGS)
 
 						cols = list_concat_copy(cols, extra_restargets);
 						break;
+					case T_SelectStmt:
+
+						/*
+						 * SELECT ... FROM one table WHERE col = @p: the
+						 * parameters get the types of the columns they are
+						 * compared with, like in DELETE.
+						 */
+						select_stmt = (SelectStmt *) parsetree->stmt;
+						if (select_stmt->op != SETOP_NONE ||
+							select_stmt->whereClause == NULL ||
+							list_length(select_stmt->fromClause) != 1 ||
+							!IsA(linitial(select_stmt->fromClause), RangeVar))
+						{
+							sql_dialect = sql_dialect_value_old;
+							is_supported_case_sp_describe_undeclared_parameters = false;
+							break;
+						}
+						rewrite_object_refs(parsetree->stmt);
+						sql_dialect = sql_dialect_value_old;
+						relation = (RangeVar *) linitial(select_stmt->fromClause);
+						relid = RangeVarGetRelid(relation, NoLock, false);
+						r = relation_open(relid, AccessShareLock);
+						pstate = (ParseState *) palloc0(sizeof(ParseState));
+						pstate->p_target_relation = r;
+						target_attnums = handle_where_clause_attnums(pstate, select_stmt->whereClause, target_attnums, true);
+						extra_restargets = handle_where_clause_restargets_left(pstate, select_stmt->whereClause, extra_restargets, true);
+
+						cols = list_copy(extra_restargets);
+						break;
 					default:
 						is_supported_case_sp_describe_undeclared_parameters = false;
 						break;
@@ -1229,6 +1258,9 @@ sp_describe_undeclared_parameters_internal(PG_FUNCTION_ARGS)
 					case T_DeleteStmt:
 						values_list = list_make1(handle_where_clause_restargets_right(pstate, delete_stmt->whereClause, NIL, true));
 						break;
+					case T_SelectStmt:
+						values_list = list_make1(handle_where_clause_restargets_right(pstate, select_stmt->whereClause, NIL, true));
+						break;
 					default:
 						is_supported_case_sp_describe_undeclared_parameters = false;
 						break;
@@ -1275,6 +1307,7 @@ sp_describe_undeclared_parameters_internal(PG_FUNCTION_ARGS)
 									break;
 								case T_UpdateStmt:
 								case T_DeleteStmt:
+								case T_SelectStmt:
 									res = lfirst(sublc);
 									if (nodeTag(res->val) != T_ColumnRef)
 									{
