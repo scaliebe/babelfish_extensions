@@ -6138,7 +6138,22 @@ exec_stmt_fetch(PLtsql_execstate *estate, PLtsql_stmt_fetch *stmt)
 			if (n == 0)
 				exec_move_row(estate, target, NULL, tuptab->tupdesc);
 			else
-				exec_move_row(estate, target, tuptab->vals[0], tuptab->tupdesc);
+			{
+				/*
+				 * Like SET and SELECT @var = ..., FETCH ... INTO silently
+				 * truncates a string that is longer than the variable.
+				 */
+				suppress_string_truncation_error = true;
+				PG_TRY();
+				{
+					exec_move_row(estate, target, tuptab->vals[0], tuptab->tupdesc);
+				}
+				PG_FINALLY();
+				{
+					suppress_string_truncation_error = false;
+				}
+				PG_END_TRY();
+			}
 		}
 		else					/* no target. push the result to client */
 		{
