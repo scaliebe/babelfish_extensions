@@ -1773,6 +1773,9 @@ static void format_hexadecimal(Datum value, StringInfo format_res, char pattern,
 static void format_exponential(Numeric numeric_val, StringInfo format_res, char pattern, char *precision_string);
 static void format_compact(Numeric numeric_val, StringInfo format_res, char pattern, char *precision_string, char *data_type, Oid arg_type_oid);
 static void format_roundtrip(Datum value, Numeric numeric_val, StringInfo format_res, char pattern, char *data_type, Oid arg_type_oid);
+static int	custom_numeric_find_section(const char *format, int section);
+static void custom_numeric_round(char *digits, int *scale, int pos);
+static void format_custom_numeric(Numeric numeric_val, StringInfo format_res, const char *format);
 static void format_numeric_handler(Datum value, Numeric numeric_val, StringInfo format_res, char pattern, char *precision_string,
 								   Oid arg_type_oid, char *culture, char *valid_culture, char *data_type);
 

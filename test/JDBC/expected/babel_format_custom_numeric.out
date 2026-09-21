@@ -32,9 +32,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 00000000 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+01234567#!#1234567#!#1,234,567#!#1,234,567,890,123,456#!#012345#!#123
+~~END~~
 
 
 -- 2. Decimal place formatting
@@ -49,9 +48,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 0.00 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+1234567.12#!#1234567.123456789#!#1234567.123456789#!#9876543.988#!#1234567.89#!#123456.7
+~~END~~
 
 
 -- 3. Combination of integer and decimal formatting
@@ -64,9 +62,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,##0.00 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+1,234,567.12#!#9,876,543.988#!#1,234.56#!#123.45
+~~END~~
 
 
 -- 4. Percentage formatting
@@ -77,9 +74,10 @@ SELECT
     FORMAT(1.2345, '0.00%') AS large_value_percent
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 0.00% is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
+1234567.12%#!#1234567.89%#!#12.34%#!#123.45%
+~~END~~
 
 
 
@@ -100,9 +98,10 @@ SELECT
     FORMAT(123000000, '0.00E+0') AS large_value_scientific
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 0.00E+0 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
+1.23E+15#!#1.23E+6#!#1.23E+6#!#1.23E-6#!#1.23E+8
+~~END~~
 
 
 -- 7. Custom thousand separators
@@ -114,9 +113,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,### is not supported/invalid format when converting from NUMERIC to a character string.)~~
+1,234,567#!#1.234.567#!#1 234 567
+~~END~~
 
 
 -- 8. Padding with spaces
@@ -128,9 +126,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 00000000 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+01234567#!#        1234567#!#1234567        
+~~END~~
 
 
 -- 9. Negative number formatting
@@ -142,9 +139,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,##0.00;(#,##0.00) is not supported/invalid format when converting from NUMERIC to a character string.)~~
+(1,234,567.12)#!#-1,234,567.12#!#($1,234.56)
+~~END~~
 
 
 -- 10. Rounding behavior
@@ -154,9 +150,10 @@ SELECT
     FORMAT(1234.5678, '0') AS rounded_to_integer
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: 0.00 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar
+1234.57#!#1234.568#!#1235
+~~END~~
 
 
 -- 11. Truncation behavior
@@ -166,9 +163,10 @@ SELECT
     FORMAT(1234.5678, '#') AS truncated_to_integer
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #.## is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar
+1234.57#!#1234.568#!#1235
+~~END~~
 
 
 -- 12. Zero value handling
@@ -178,9 +176,10 @@ SELECT
     FORMAT(0, '#,##0.00') AS zero_with_group_separator
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #.## is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar
+#!#0.00#!#0.00
+~~END~~
 
 
 
@@ -193,9 +192,8 @@ SELECT
 GO
 ~~START~~
 nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,### is not supported/invalid format when converting from NUMERIC to a character string.)~~
+1,234,567,890,123,456,789,012,345,678,901,234,567#!#0.0000000000000000000000000000000000001
+~~END~~
 
 
 -- 14. Custom format with text
@@ -207,9 +205,8 @@ FROM format_numeric_test;
 GO
 ~~START~~
 nvarchar#!#nvarchar#!#nvarchar
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: "Total: "$#,##0 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+Total: $1,234,567#!#1,234,567.12 units#!#$1,234.56 USD
+~~END~~
 
 
 -- 15. Hexadecimal format (for integers)
@@ -241,9 +238,10 @@ SELECT
     FORMAT(0.1234, '#,##0.0#') AS mixed_format_small_number
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,##0.0# is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar
+1,234.57#!#1,234.568#!#0.12
+~~END~~
 
 
 -- 18. Escaping special characters
@@ -252,9 +250,10 @@ SELECT
     FORMAT(1234.56, '"\#\#"#,##0.00') AS quoted_hash
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: \#\#\#\#,##0.00 is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar
+####1234.56#!#\#\#1,234.56
+~~END~~
 
 
 -- 19. Edge cases
@@ -265,9 +264,10 @@ SELECT
     FORMAT(CAST('1E+40' AS FLOAT), '0.0000E+0') AS very_large_float
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,##0.00;(#,##0.00) is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
+$0.00#!#0.00#!#0#!#1.0000E+40
+~~END~~
 
 
 -- 20. Format with percentage and scaling
@@ -278,9 +278,10 @@ SELECT
     FORMAT(1234, '#,##0.00%') AS scaled_up_percent
 FROM format_numeric_test;
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: #,##0.00% is not supported/invalid format when converting from NUMERIC to a character string.)~~
+~~START~~
+nvarchar#!#nvarchar#!#nvarchar#!#nvarchar
+12.34 %#!#12.3 %#!#12.34%#!#123,400.00%
+~~END~~
 
 
 -- Cleanup

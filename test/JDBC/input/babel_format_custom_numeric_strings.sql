@@ -1,0 +1,442 @@
+-- Custom numeric format strings of FORMAT(). Every result was compared with
+-- SQL Server 2022.
+
+SELECT '[' + FORMAT(CAST(1 AS int), N'0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1 AS int), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12 AS smallint), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(123 AS int), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-5 AS int), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1 AS numeric(18,0)), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(7 AS tinyint), N'000') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'#,###') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'#,##0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'#,###') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'#') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'#.##') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.5 AS numeric(5,2)), N'#.##') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.05 AS numeric(5,2)), N'#.##') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.05 AS numeric(5,2)), N'0.##') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.005 AS numeric(5,3)), N'0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.004 AS numeric(5,3)), N'0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-0.004 AS numeric(5,3)), N'0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-0.004 AS numeric(5,3)), N'0.00;(0.00)') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-0.004 AS numeric(5,3)), N'0.00;(0.00);zero') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'0.00;(0.00);zero') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'0.00;(0.00);') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-12.5 AS numeric(5,1)), N'0.00;(0.00);zero') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-12.5 AS numeric(5,1)), N'0.0;;zero') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-12.5 AS numeric(5,1)), N'0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12.5 AS numeric(5,1)), N'0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(13.5 AS numeric(5,1)), N'0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(2.5 AS float), N'0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(3.5 AS float), N'0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.5678 AS numeric(10,4)), N'#,##0.0#') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.5678 AS numeric(10,4)), N'#,###.#0#') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.5678 AS numeric(10,4)), N'0,0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'0,.0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'0,,.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'#,#,') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N',#') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'#,') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'0.0,0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1234 AS numeric(6,4)), N'0.00%') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1234 AS numeric(6,4)), N'%0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1234 AS numeric(6,4)), N'0.00%%') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1234 AS numeric(6,4)), N'0.00\%') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1234 AS numeric(6,4)), N'0.00''%''') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1234 AS numeric(6,4)), N'0.00‰') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00E+00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00e-0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00E0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'00.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'#.##E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'###E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.00000123 AS numeric(12,8)), N'0.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.00000123 AS numeric(12,8)), N'0.00E-0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.00000123 AS numeric(12,8)), N'0.00e+000') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS int), N'0.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(999999 AS int), N'0.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-1234567 AS int), N'0.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00E') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00E+') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0.00Ex') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'"Total: "$#,##0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'''abc''0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'"unterminated 0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'\#\#\#\#,##0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'0.00\') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'0.0.0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.56 AS numeric(8,2)), N'.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.56 AS numeric(8,2)), N'#.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.56 AS numeric(8,2)), N'0.') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'#.') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'abc') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'ab') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'#-#') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'(###) ###-####') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(8005551212 AS bigint), N'(###) ###-####') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12 AS int), N'000-00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12 AS int), N'#0#') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234 AS int), N'0 0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234 AS int), N'        0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234 AS int), N'0        ') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(5 AS int), N'00.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(5 AS int), N'0;0;0;0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-5 AS int), N'0;') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-5 AS int), N';0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(5 AS int), N';0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-5 AS int), N'+0;-0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(5 AS int), N'+0;-0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-5 AS int), N'-0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'DD') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'N2x') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'd') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N' 0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'0 ') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1E+40 AS float), N'0.0000E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1E+40 AS float), N'#,##0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(123456.7 AS real), N'0.###') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.89 AS float), N'0.##') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.1 AS float), N'0.00000000000000000000') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1.0/3 AS float), N'0.####################') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(2.0/3 AS float), N'0.####################') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(123456789012345678 AS bigint), N'#,###') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS money), N'#,##0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.5678 AS money), N'0.0000') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-1234.5 AS smallmoney), N'#,##0.00;(#,##0.00)') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(255 AS tinyint), N'#,##0.00%') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'#,##0.00', 'de-DE') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'0.00%', 'de-DE') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567.891 AS numeric(12,3)), N'0.00E+0', 'de-DE') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-1234567.891 AS numeric(12,3)), N'#,##0.00', 'de-DE') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(NULL AS int), N'00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'x#,##0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'\##,##0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'\#\##,##0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS numeric(8,2)), N'') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.56 AS float), N'') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(5 AS int), N' ') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234.5 AS numeric(8,2)), N'0.00;;') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0 AS numeric(8,2)), N'#;-#;') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-1 AS int), N'#;;z') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'#,##0,') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567 AS int), N'#,##0,,') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(999.999 AS numeric(8,3)), N'0.00') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(9.995 AS numeric(8,3)), N'0.00E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(99999 AS int), N'0.0E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.000999 AS numeric(8,6)), N'0.0E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12345 AS int), N'0.###E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12345 AS int), N'E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12345 AS int), N'0E+0E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1.5 AS numeric(3,1)), N'0 %') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1.5 AS numeric(3,1)), N'%') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-1.5 AS numeric(3,1)), N'0.0;(0.0)') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12 AS int), N'0''''0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(12 AS int), N'0"x') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(79228162514264337593543950335 AS numeric(38,0)), N'#,##0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(0.0000000000000000000000000001 AS numeric(38,28)), N'0.############################') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(1234567890123456789 AS bigint), N'0.000E+0') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(32767 AS smallint), N'00000000') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(-32768 AS smallint), N'00000000') + ']'
+GO
+
+SELECT '[' + FORMAT(CAST(255 AS tinyint), N'0.0') + ']'
+GO
+
+-- a quoted text at the start of the format string
+SELECT FORMAT(CAST(1234 AS int), N'"Total: "#,##0'), FORMAT(CAST(1234 AS int), N'''ab''0.0'), FORMAT(CAST(1234 AS bigint), N'"#"#')
+GO
+
+-- in a query, as a column and in an expression
+CREATE TABLE babel_format_custom_numeric_t (m smallint, y int, amount numeric(12,2))
+GO
+
+INSERT INTO babel_format_custom_numeric_t VALUES (3, 2026, 1234.5), (11, 2025, -0.004), (NULL, 2024, NULL)
+GO
+
+SELECT CAST(FORMAT(m, '00') + '/' + CAST(y AS varchar) AS varchar(50)) AS period, FORMAT(amount, '#,##0.00;(#,##0.00);-') AS amount, FORMAT(amount, '#,##0.00', 'de-DE') AS amount_de FROM babel_format_custom_numeric_t ORDER BY y DESC
+GO
+
+DROP TABLE babel_format_custom_numeric_t
+GO
