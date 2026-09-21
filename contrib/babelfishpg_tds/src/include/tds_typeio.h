@@ -159,6 +159,9 @@ typedef struct TdsRelationMetaData
 	 */
 	char	   *partName[4];
 
+	/* number of parts of the name, as the statement wrote it */
+	uint8		numParts;
+
 	/*
 	 * A 1-based index for this relation which is used while sending the
 	 * COLINFO token.
