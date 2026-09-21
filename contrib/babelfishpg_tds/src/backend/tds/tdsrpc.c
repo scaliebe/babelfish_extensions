@@ -2419,7 +2419,8 @@ SendCursorResponse(TDSRequestSP req)
 	 */
 	PrepareRowDescription(portal->tupDesc, plannedStmt, targetList,
 						  portal->formats, true,
-						  (req->scrollopt & (SP_CURSOR_SCROLLOPT_DYNAMIC | SP_CURSOR_SCROLLOPT_KEYSET)));
+						  (req->scrollopt & (SP_CURSOR_SCROLLOPT_DYNAMIC | SP_CURSOR_SCROLLOPT_KEYSET)),
+						  portal->sourceText);
 
 	/* Send COLMETADATA token, TABNAME token and COLINFO token */
 	SendColumnMetadataToken(portal->tupDesc->natts, true /* send ROWSTAT column */ );

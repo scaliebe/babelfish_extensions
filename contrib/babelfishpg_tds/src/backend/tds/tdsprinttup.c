@@ -87,7 +87,8 @@ TdsPrinttupStartup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	TdsSendRowDescription(typeinfo,
 						  plannedStmt,
 						  targetList,
-						  portal->formats);
+						  portal->formats,
+						  portal->sourceText);
 	return;
 }
 
