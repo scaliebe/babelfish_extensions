@@ -366,11 +366,11 @@ Table Columns:
 Column: class_id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: class_name
   - Is Primary Key: False
   - Data Type: System.String
-  - Allow Null: True
+  - Allow Null: False
 Column: teacher_name
   - Is Primary Key: False
   - Data Type: System.String
@@ -380,6 +380,7 @@ Primary Key Columns:
 - class_id
 ~~END~~
 
+SET NO_BROWSETABLE OFF
 DROP TABLE IF EXISTS new_cclass
 
 #Test case 12: Stored Procedures

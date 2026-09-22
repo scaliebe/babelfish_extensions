@@ -136,6 +136,9 @@ static void FillTabNameWithoutNumParts(StringInfo buf, uint8 numParts, TdsRelati
 static void SetTdsEstateErrorData(void);
 static void ResetTdsEstateErrorData(void);
 static void SetAttributesForColmetada(TdsColumnMetaData *col);
+static bool PlanHasOuterJoin(PlannedStmt *plannedstmt);
+static bool PlanHasNullingNode(PlannedStmt *plannedstmt);
+static bool PlanTreeHasNullingNode(Plan *plan);
 static bool is_this_a_vector_datatype(Oid oid);
 
 static inline void
@@ -1084,6 +1087,9 @@ SendColInfoToken(int natts, bool sendRowStat)
 			if (strcmp(col->baseColName, col->colName.data) != 0)
 				status |= COLUMN_STATUS_DIFFERENT_NAME;
 
+			if (col->hidden)
+				status |= COLUMN_STATUS_HIDDEN;
+
 			{
 				int			tempatt;
 
@@ -1296,6 +1302,13 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			col->relOid = tle->resorigtbl;
 			col->attrNum = tle->resorigcol;
 
+			/*
+			 * A key column that was added for SET NO_BROWSETABLE ON has no
+			 * resname and the column name in resorigname.
+			 */
+			col->hidden = (tle->resname == NULL && tle->resorigname != NULL &&
+						   OidIsValid(tle->resorigtbl));
+
 			tlist_item = lnext(targetlist, tlist_item);
 		}
 		else
@@ -1304,9 +1317,33 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			appendStringInfoString(&col->colName, NameStr(att->attname));
 			col->relOid = 0;
 			col->attrNum = 0;
+			col->hidden = false;
 		}
 
 		SetAttributesForColmetada(col);
+
+		/*
+		 * With SET NO_BROWSETABLE ON, describe a column of a table as NOT
+		 * NULL with a fixed-length type if it is that in its table, like SQL
+		 * Server does. Only if the query has an outer join, or an aggregate
+		 * step that can produce NULL for a grouping column, the column can be
+		 * NULL in the result; the plan does not tell which table is on the
+		 * nullable side, so all columns of such a query stay nullable.
+		 */
+		if (OidIsValid(col->relOid) && col->attrNum > 0 &&
+			pltsql_plugin_handler_ptr && pltsql_plugin_handler_ptr->pltsql_no_browsetable &&
+			(*pltsql_plugin_handler_ptr->pltsql_no_browsetable) &&
+			!PlanHasOuterJoin(plannedstmt) && !PlanHasNullingNode(plannedstmt))
+		{
+			HeapTuple	tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(col->relOid),
+											 Int16GetDatum(col->attrNum));
+
+			if (HeapTupleIsValid(tp))
+			{
+				col->attNotNull = ((Form_pg_attribute) GETSTRUCT(tp))->attnotnull;
+				ReleaseSysCache(tp);
+			}
+		}
 
 		switch (finfo->sendFuncId)
 		{
@@ -1599,6 +1636,24 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("data type %d not supported yet", atttypid)));
+		}
+
+		/* a NOT NULL column of a character type in browse mode: flags like SQL Server */
+		if (col->attNotNull && pltsql_plugin_handler_ptr &&
+			pltsql_plugin_handler_ptr->pltsql_no_browsetable &&
+			(*pltsql_plugin_handler_ptr->pltsql_no_browsetable))
+		{
+			switch (finfo->sendFuncId)
+			{
+				case TDS_SEND_CHAR:
+				case TDS_SEND_NCHAR:
+				case TDS_SEND_VARCHAR:
+				case TDS_SEND_NVARCHAR:
+					col->metaEntry.type2.flags = TDS_COL_METADATA_NOT_NULL_FLAGS;
+					break;
+				default:
+					break;
+			}
 		}
 	}
 
@@ -3083,6 +3138,99 @@ GetTdsEstateErrorData(int *number, int *severity, int *state)
 
 /*
  */
+/*
+ * Does the range table of the plan contain an outer join?
+ */
+static bool
+PlanHasOuterJoin(PlannedStmt *plannedstmt)
+{
+	ListCell   *lc;
+
+	if (plannedstmt == NULL)
+		return true;
+
+	foreach(lc, plannedstmt->rtable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+
+		if (rte->rtekind == RTE_JOIN && rte->jointype != JOIN_INNER)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Does the plan contain a node that can put NULL into a column of a table:
+ * an aggregate or grouping step (grouping sets), a set operation, a window
+ * step? Walks the plan tree by hand, planstate_tree_walker needs a PlanState.
+ */
+static bool
+PlanTreeHasNullingNode(Plan *plan)
+{
+	ListCell   *lc;
+
+	if (plan == NULL)
+		return false;
+
+	switch (nodeTag(plan))
+	{
+		case T_Agg:
+		case T_Group:
+		case T_WindowAgg:
+		case T_SetOp:
+		case T_RecursiveUnion:
+			return true;
+		case T_Append:
+			foreach(lc, ((Append *) plan)->appendplans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		case T_MergeAppend:
+			foreach(lc, ((MergeAppend *) plan)->mergeplans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		case T_BitmapAnd:
+			foreach(lc, ((BitmapAnd *) plan)->bitmapplans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		case T_BitmapOr:
+			foreach(lc, ((BitmapOr *) plan)->bitmapplans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		case T_SubqueryScan:
+			if (PlanTreeHasNullingNode(((SubqueryScan *) plan)->subplan))
+				return true;
+			break;
+		case T_CustomScan:
+			foreach(lc, ((CustomScan *) plan)->custom_plans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		default:
+			break;
+	}
+
+	return PlanTreeHasNullingNode(plan->lefttree) || PlanTreeHasNullingNode(plan->righttree);
+}
+
+static bool
+PlanHasNullingNode(PlannedStmt *plannedstmt)
+{
+	ListCell   *lc;
+
+	if (plannedstmt == NULL)
+		return true;
+	if (PlanTreeHasNullingNode(plannedstmt->planTree))
+		return true;
+	foreach(lc, plannedstmt->subplans)
+		if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+			return true;
+	return false;
+}
+
 static void
 SetAttributesForColmetada(TdsColumnMetaData *col)
 {

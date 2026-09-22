@@ -1,0 +1,232 @@
+-- With SET NO_BROWSETABLE ON the primary key columns of the base tables
+-- that a SELECT does not select are added to the result as hidden columns
+-- (marked HIDDEN in the COLINFO token; the driver of this test shows them).
+CREATE TABLE babel_browse_hk_terminal (TerminalNr INT NOT NULL PRIMARY KEY, Name VARCHAR(30), Typ INT)
+GO
+
+CREATE TABLE babel_browse_hk_termtyp (TermTypID INT NOT NULL PRIMARY KEY, HerstellerID INT)
+GO
+
+CREATE TABLE babel_browse_hk_tag (Jahr INT NOT NULL, Tag INT NOT NULL, persnr INT, Feiertag INT, CONSTRAINT pk_babel_browse_hk_tag PRIMARY KEY (Jahr, Tag))
+GO
+
+CREATE TABLE babel_browse_hk_nokey (a INT, b INT)
+GO
+
+INSERT INTO babel_browse_hk_terminal VALUES (1, 'T1', 7), (2, 'T2', NULL)
+GO
+
+INSERT INTO babel_browse_hk_termtyp VALUES (7, 99)
+GO
+
+INSERT INTO babel_browse_hk_tag VALUES (2026, 5, 3, 0), (2026, 6, 3, 1)
+GO
+
+INSERT INTO babel_browse_hk_nokey VALUES (1, 2)
+GO
+
+CREATE VIEW babel_browse_hk_v AS SELECT persnr, Feiertag FROM babel_browse_hk_tag
+GO
+
+-- without the setting nothing is added
+SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1
+GO
+
+SET NO_BROWSETABLE ON
+GO
+
+-- the keys of both tables of a join
+SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1 ORDER BY TerminalNr
+GO
+
+-- a two-column key, a column selected twice, old-style join, ORDER BY a column that is not selected
+SELECT i.persnr, i.Feiertag, i.Feiertag FROM babel_browse_hk_tag i, babel_browse_hk_terminal m WHERE m.TerminalNr = i.persnr - 2 AND i.persnr = 3 ORDER BY i.Tag DESC
+GO
+
+-- tables on the nullable side of outer joins: their key columns are NULL
+-- where the join has no match; two LEFT JOINs on the same table, a CTE and
+-- a join condition on two columns
+CREATE TABLE babel_browse_hk_text (TerminalNr INT NOT NULL, Nr INT NOT NULL, Text VARCHAR(50), CONSTRAINT pk_babel_browse_hk_text PRIMARY KEY (TerminalNr, Nr))
+GO
+
+CREATE TABLE babel_browse_hk_code (TerminalNr INT NOT NULL, Code INT NOT NULL, CONSTRAINT pk_babel_browse_hk_code PRIMARY KEY (TerminalNr, Code))
+GO
+
+INSERT INTO babel_browse_hk_text VALUES (1, 1, 'first')
+GO
+
+INSERT INTO babel_browse_hk_code VALUES (1, 3)
+GO
+
+SELECT t.Name, tp.HerstellerID, tx.Text FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ LEFT JOIN babel_browse_hk_text tx ON tx.TerminalNr = t.TerminalNr ORDER BY t.TerminalNr
+GO
+
+WITH agg AS (SELECT persnr, MIN(Tag) AS MinTag FROM babel_browse_hk_tag GROUP BY persnr)
+SELECT t.Name, agg.MinTag, c.Code, CASE WHEN tx.Nr IS NULL THEN '' ELSE tx.Text END AS txt
+FROM babel_browse_hk_terminal t LEFT JOIN agg ON agg.persnr = t.TerminalNr + 2 LEFT JOIN babel_browse_hk_code c ON c.TerminalNr = t.TerminalNr
+LEFT JOIN babel_browse_hk_text tx ON tx.TerminalNr = c.TerminalNr AND tx.Nr = c.Code - 2 ORDER BY t.TerminalNr
+GO
+
+SELECT t.Name FROM babel_browse_hk_termtyp tp RIGHT JOIN babel_browse_hk_terminal t ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
+GO
+
+SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t FULL OUTER JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
+GO
+
+-- a view is resolved to its base tables: the columns of the view are
+-- described as columns of the base tables, the keys of the base tables are
+-- added, an expression column of the view is an expression
+CREATE VIEW babel_browse_hk_v2 AS
+SELECT a.TerminalNr, a.Name, a.Name + 'x' AS Namex, g.HerstellerID FROM babel_browse_hk_terminal a LEFT JOIN babel_browse_hk_termtyp g ON g.TermTypID = a.Typ
+GO
+
+SELECT Name, HerstellerID FROM babel_browse_hk_v2 WHERE 1 = 1 ORDER BY Name
+GO
+
+SELECT vz.TerminalNr, vz.Namex FROM babel_browse_hk_v2 vz ORDER BY vz.TerminalNr
+GO
+
+-- a view over a view, and a view that does not project the key
+CREATE VIEW babel_browse_hk_v3 AS SELECT TerminalNr AS Nr, Name AS N FROM babel_browse_hk_v2
+GO
+
+SELECT N FROM babel_browse_hk_v3 ORDER BY N
+GO
+
+CREATE VIEW babel_browse_hk_v4 AS SELECT Name, Typ FROM babel_browse_hk_terminal
+GO
+
+SELECT Name FROM babel_browse_hk_v4 ORDER BY Name
+GO
+
+-- a view with an aggregate: nothing is added
+CREATE VIEW babel_browse_hk_v5 AS SELECT persnr, COUNT(*) AS n FROM babel_browse_hk_tag GROUP BY persnr
+GO
+
+SELECT n FROM babel_browse_hk_v5
+GO
+
+DROP VIEW babel_browse_hk_v5
+GO
+
+DROP VIEW babel_browse_hk_v4
+GO
+
+DROP VIEW babel_browse_hk_v3
+GO
+
+DROP VIEW babel_browse_hk_v2
+GO
+
+-- a key column that is selected, also with an alias, is not added again
+SELECT TerminalNr, Name FROM babel_browse_hk_terminal ORDER BY 1
+GO
+
+SELECT TerminalNr AS nr, Name FROM babel_browse_hk_terminal ORDER BY 1
+GO
+
+SELECT * FROM babel_browse_hk_tag ORDER BY Tag
+GO
+
+-- no key, a view, a subquery: nothing to add
+SELECT a FROM babel_browse_hk_nokey
+GO
+
+SELECT persnr FROM babel_browse_hk_v
+GO
+
+SELECT x.Name FROM (SELECT Name FROM babel_browse_hk_terminal) x ORDER BY 1
+GO
+
+-- not for aggregates, DISTINCT, set operations
+SELECT COUNT(*) AS n FROM babel_browse_hk_tag
+GO
+
+SELECT persnr, MAX(Feiertag) AS f FROM babel_browse_hk_tag GROUP BY persnr
+GO
+
+SELECT DISTINCT persnr FROM babel_browse_hk_tag
+GO
+
+SELECT Name FROM babel_browse_hk_terminal UNION ALL SELECT Name FROM babel_browse_hk_terminal ORDER BY 1
+GO
+
+-- not for an assignment, a cursor, SELECT INTO, INSERT ... SELECT, a subquery in a condition
+DECLARE @v INT
+SELECT @v = persnr FROM babel_browse_hk_tag WHERE Tag = 5
+SELECT @v AS v
+GO
+
+DECLARE @p INT
+DECLARE c CURSOR FOR SELECT persnr FROM babel_browse_hk_tag ORDER BY Tag
+OPEN c
+FETCH NEXT FROM c INTO @p
+SELECT @p AS p
+CLOSE c
+DEALLOCATE c
+GO
+
+SELECT Name INTO babel_browse_hk_into FROM babel_browse_hk_terminal
+GO
+
+SELECT * FROM babel_browse_hk_into ORDER BY 1
+GO
+
+INSERT INTO babel_browse_hk_nokey SELECT persnr, Feiertag FROM babel_browse_hk_tag
+GO
+
+SELECT * FROM babel_browse_hk_nokey ORDER BY 1, 2
+GO
+
+SELECT Name FROM babel_browse_hk_terminal WHERE Typ IN (SELECT TermTypID FROM babel_browse_hk_termtyp)
+GO
+
+-- in a procedure and with sp_executesql
+CREATE PROCEDURE babel_browse_hk_p @nr INT AS SELECT Name FROM babel_browse_hk_terminal WHERE TerminalNr = @nr
+GO
+
+EXEC babel_browse_hk_p 2
+GO
+
+EXEC sp_executesql N'SELECT Name FROM babel_browse_hk_terminal WHERE TerminalNr = @nr', N'@nr INT', 1
+GO
+
+-- the rows can still be updated with the key
+UPDATE babel_browse_hk_terminal SET Name = 'T1a' WHERE TerminalNr = 1
+GO
+
+SELECT Name FROM babel_browse_hk_terminal ORDER BY TerminalNr
+GO
+
+SET NO_BROWSETABLE OFF
+GO
+
+SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1
+GO
+
+DROP PROCEDURE babel_browse_hk_p
+GO
+
+DROP TABLE babel_browse_hk_into
+GO
+
+DROP VIEW babel_browse_hk_v
+GO
+
+DROP TABLE babel_browse_hk_code
+GO
+
+DROP TABLE babel_browse_hk_text
+GO
+
+DROP TABLE babel_browse_hk_nokey
+GO
+
+DROP TABLE babel_browse_hk_tag
+GO
+
+DROP TABLE babel_browse_hk_termtyp
+GO
+
+DROP TABLE babel_browse_hk_terminal
+GO

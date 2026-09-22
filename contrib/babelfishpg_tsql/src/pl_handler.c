@@ -16,12 +16,15 @@
 #include "postgres.h"
 
 #include "access/attnum.h"
+#include "access/genam.h"
 #include "access/relation.h"
+#include "access/sysattr.h"
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/table.h"
 #include "catalog/heap.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_index.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
@@ -70,6 +73,7 @@
 #include "utils/builtins.h"
 #include "utils/guc_tables.h"
 #include "utils/inval.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/plancache.h"
 #include "utils/ps_status.h"
@@ -1137,6 +1141,333 @@ pltsql_pre_parse_analyze(ParseState *pstate, RawStmt *parseTree)
 	}
 }
 
+/*
+ * Primary key attributes of a relation, like the TDS layer finds them for
+ * the KEY status of a column.
+ */
+static List *
+pltsql_pkey_attnums(Oid relid)
+{
+	Relation	indexRelation;
+	ScanKeyData skey;
+	SysScanDesc scan;
+	HeapTuple	indexTuple;
+	List	   *result = NIL;
+
+	indexRelation = table_open(IndexRelationId, AccessShareLock);
+	ScanKeyInit(&skey, Anum_pg_index_indrelid, BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+	scan = systable_beginscan(indexRelation, IndexIndrelidIndexId, true, NULL, 1, &skey);
+
+	while (HeapTupleIsValid(indexTuple = systable_getnext(scan)))
+	{
+		Form_pg_index index = (Form_pg_index) GETSTRUCT(indexTuple);
+
+		if (index->indisprimary)
+		{
+			int			i;
+
+			for (i = 0; i < index->indnkeyatts; i++)
+				result = lappend_int(result, index->indkey.values[i]);
+			break;
+		}
+	}
+
+	systable_endscan(scan);
+	table_close(indexRelation, AccessShareLock);
+
+	return result;
+}
+
+/*
+ * Position of a column in the list of considered columns of an RTE, -1 if
+ * it is not there. The lists cols, origrels and origatts run in parallel.
+ */
+static int
+pltsql_browse_col_pos(List *cols, AttrNumber col)
+{
+	int			i = 0;
+	ListCell   *lc;
+
+	foreach(lc, cols)
+	{
+		if (lfirst_int(lc) == col)
+			return i;
+		i++;
+	}
+	return -1;
+}
+
+/* The column of the RTE that carries a base table column, InvalidAttrNumber if none. */
+static AttrNumber
+pltsql_browse_col_of(List *cols, List *origrels, List *origatts, Oid baserelid, AttrNumber baseattnum)
+{
+	int			i = 0;
+	ListCell   *lc;
+
+	foreach(lc, cols)
+	{
+		if (list_nth_oid(origrels, i) == baserelid && list_nth_int(origatts, i) == baseattnum)
+			return lfirst_int(lc);
+		i++;
+	}
+	return InvalidAttrNumber;
+}
+
+/*
+ * Is the query of a view a plain projection of its base tables, so that its
+ * rows are rows of the base tables?
+ */
+static bool
+pltsql_view_query_is_simple(Query *vq)
+{
+	return vq != NULL && vq->commandType == CMD_SELECT && vq->setOperations == NULL &&
+		!vq->hasAggs && !vq->hasWindowFuncs && !vq->hasTargetSRFs &&
+		vq->groupClause == NIL && vq->groupingSets == NIL && vq->havingQual == NULL &&
+		vq->distinctClause == NIL && vq->limitCount == NULL && vq->limitOffset == NULL;
+}
+
+/*
+ * The base table column that a column of a view projects, through nested
+ * views. False for an expression column and for a view that is not a plain
+ * projection.
+ */
+static bool
+pltsql_view_column_origin(Oid viewrelid, AttrNumber viewcol, int depth,
+						  Oid *baserelid, AttrNumber *baseattnum)
+{
+	Relation	rel;
+	Query	   *vq;
+	TargetEntry *tle;
+	bool		found = false;
+
+	if (depth > 8)
+		return false;
+
+	rel = relation_open(viewrelid, AccessShareLock);
+	if (rel->rd_rel->relkind != RELKIND_VIEW)
+	{
+		relation_close(rel, AccessShareLock);
+		return false;
+	}
+
+	vq = get_view_query(rel);
+	if (pltsql_view_query_is_simple(vq))
+	{
+		tle = get_tle_by_resno(vq->targetList, viewcol);
+		if (tle != NULL && !tle->resjunk && IsA(tle->expr, Var) &&
+			((Var *) tle->expr)->varlevelsup == 0 && ((Var *) tle->expr)->varattno > 0)
+		{
+			Var		   *var = (Var *) tle->expr;
+			RangeTblEntry *rte = rt_fetch(var->varno, vq->rtable);
+
+			if (rte->rtekind == RTE_RELATION)
+			{
+				if (rte->relkind == RELKIND_RELATION || rte->relkind == RELKIND_PARTITIONED_TABLE)
+				{
+					*baserelid = rte->relid;
+					*baseattnum = var->varattno;
+					found = true;
+				}
+				else if (rte->relkind == RELKIND_VIEW)
+					found = pltsql_view_column_origin(rte->relid, var->varattno, depth + 1,
+													  baserelid, baseattnum);
+			}
+		}
+	}
+	relation_close(rel, AccessShareLock);
+
+	return found;
+}
+
+/*
+ * With SET NO_BROWSETABLE ON, SQL Server adds the primary key columns of
+ * every base table of a SELECT that the statement does not select to the
+ * result, as hidden columns: the client needs them to update the rows. Add
+ * them to the target list. They have no resname and carry the column name
+ * in resorigname, which is how the TDS layer tells them from the columns of
+ * the statement and marks them HIDDEN in the COLINFO token.
+ *
+ * Queries whose rows are not the rows of the base tables are left alone.
+ */
+static void
+pltsql_add_browse_hidden_key_columns(ParseState *pstate, Query *query)
+{
+	int			rti = 0;
+	int			resno = list_length(query->targetList);
+	ListCell   *lc;
+
+	if (query->commandType != CMD_SELECT || query->utilityStmt != NULL ||
+		query->setOperations != NULL || query->hasAggs || query->hasWindowFuncs ||
+		query->hasTargetSRFs || query->groupClause != NIL || query->groupingSets != NIL ||
+		query->havingQual != NULL || query->distinctClause != NIL)
+		return;
+
+	foreach(lc, query->rtable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+		RTEPermissionInfo *perminfo;
+		bool		is_view;
+		int			natts;
+		AttrNumber	col;
+		List	   *cols = NIL; /* columns of the RTE to consider */
+		List	   *origrels = NIL; /* their base table */
+		List	   *origatts = NIL; /* and base column */
+		List	   *rels = NIL; /* distinct base tables */
+		ListCell   *lr;
+
+		rti++;
+		if (rte->rtekind != RTE_RELATION || !rte->inFromCl)
+			continue;
+		is_view = (rte->relkind == RELKIND_VIEW);
+		if (!is_view && rte->relkind != RELKIND_RELATION && rte->relkind != RELKIND_PARTITIONED_TABLE)
+			continue;
+
+		perminfo = getRTEPermissionInfo(query->rteperminfos, rte);
+
+		/*
+		 * Which base table column does each column of the RTE stand for? For
+		 * a table it is the column itself; for a view the column it projects,
+		 * like SQL Server resolves a view in browse mode.
+		 */
+		{
+			Relation	r = relation_open(rte->relid, AccessShareLock);
+
+			natts = RelationGetNumberOfAttributes(r);
+			relation_close(r, AccessShareLock);
+		}
+		for (col = 1; col <= natts; col++)
+		{
+			Oid			baserelid = rte->relid;
+			AttrNumber	baseattnum = col;
+
+			if (is_view && !pltsql_view_column_origin(rte->relid, col, 0, &baserelid, &baseattnum))
+				continue;
+			cols = lappend_int(cols, col);
+			origrels = lappend_oid(origrels, baserelid);
+			origatts = lappend_int(origatts, baseattnum);
+			rels = list_append_unique_oid(rels, baserelid);
+		}
+
+		if (is_view)
+		{
+			/*
+			 * The columns of the view that the statement selects are
+			 * described as columns of the base table, an expression column of
+			 * the view as an expression.
+			 */
+			ListCell   *lt;
+
+			foreach(lt, query->targetList)
+			{
+				TargetEntry *te = (TargetEntry *) lfirst(lt);
+				int			pos;
+
+				if (te->resjunk || !IsA(te->expr, Var) ||
+					((Var *) te->expr)->varno != rti || ((Var *) te->expr)->varlevelsup != 0)
+					continue;
+				pos = pltsql_browse_col_pos(cols, ((Var *) te->expr)->varattno);
+				if (pos >= 0)
+				{
+					te->resorigtbl = list_nth_oid(origrels, pos);
+					te->resorigcol = list_nth_int(origatts, pos);
+				}
+				else
+				{
+					te->resorigtbl = InvalidOid;
+					te->resorigcol = 0;
+				}
+			}
+		}
+
+		foreach(lr, rels)
+		{
+			Oid			baserelid = lfirst_oid(lr);
+			List	   *keyattrs = pltsql_pkey_attnums(baserelid);
+			ListCell   *lk;
+			bool		complete = true;
+
+			/* every key column has to be there, or the key is of no use */
+			foreach(lk, keyattrs)
+			{
+				if (pltsql_browse_col_of(cols, origrels, origatts, baserelid, lfirst_int(lk)) == InvalidAttrNumber)
+					complete = false;
+			}
+			if (keyattrs == NIL || !complete)
+			{
+				list_free(keyattrs);
+				continue;
+			}
+
+			foreach(lk, keyattrs)
+			{
+				AttrNumber	baseattnum = lfirst_int(lk);
+				AttrNumber	attnum = pltsql_browse_col_of(cols, origrels, origatts, baserelid, baseattnum);
+				HeapTuple	tp;
+				Form_pg_attribute att;
+				Var		   *var;
+				TargetEntry *tle;
+				bool		found = false;
+				ListCell   *lt;
+
+				/* already selected? */
+				foreach(lt, query->targetList)
+				{
+					TargetEntry *te = (TargetEntry *) lfirst(lt);
+
+					if (!te->resjunk && IsA(te->expr, Var) &&
+						((Var *) te->expr)->varno == rti &&
+						((Var *) te->expr)->varattno == attnum &&
+						((Var *) te->expr)->varlevelsup == 0)
+					{
+						found = true;
+						break;
+					}
+				}
+				if (found)
+					continue;
+
+				tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(rte->relid), Int16GetDatum(attnum));
+				if (!HeapTupleIsValid(tp))
+					continue;
+				att = (Form_pg_attribute) GETSTRUCT(tp);
+				if (att->attisdropped)
+				{
+					ReleaseSysCache(tp);
+					continue;
+				}
+
+				var = makeVar(rti, attnum, att->atttypid, att->atttypmod, att->attcollation, 0);
+
+				/*
+				 * A column of a table on the nullable side of an outer join
+				 * has to carry the join in varnullingrels, like a Var the
+				 * parser makes for the target list.
+				 */
+				markNullableIfNeeded(pstate, var);
+
+				tle = makeTargetEntry((Expr *) var, ++resno, NULL, false);
+				tle->resorigtbl = baserelid;
+				tle->resorigcol = baseattnum;
+				/* the name as it was written, if the column has one */
+				tle->resorigname = get_bbf_original_column_name(baserelid, baseattnum);
+				if (tle->resorigname == NULL)
+					tle->resorigname = pstrdup(NameStr(att->attname));
+				ReleaseSysCache(tp);
+
+				query->targetList = lappend(query->targetList, tle);
+				perminfo->selectedCols = bms_add_member(perminfo->selectedCols,
+														attnum - FirstLowInvalidHeapAttributeNumber);
+			}
+			list_free(keyattrs);
+		}
+		list_free(cols);
+		list_free(origrels);
+		list_free(origatts);
+		list_free(rels);
+	}
+}
+
 static void
 pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 {
@@ -1152,6 +1483,9 @@ pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 
 	(void) mark_outside_view((Query*) query);
 	checkForAuto(query);
+
+	if (pltsql_add_browse_key_columns)
+		pltsql_add_browse_hidden_key_columns(pstate, query);
 
 	if (query->commandType == CMD_INSERT)
 	{
