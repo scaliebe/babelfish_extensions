@@ -43,6 +43,36 @@ GO
 SELECT i.persnr, i.Feiertag, i.Feiertag FROM babel_browse_hk_tag i, babel_browse_hk_terminal m WHERE m.TerminalNr = i.persnr - 2 AND i.persnr = 3 ORDER BY i.Tag DESC
 GO
 
+-- tables on the nullable side of outer joins: their key columns are NULL
+-- where the join has no match; two LEFT JOINs on the same table, a CTE and
+-- a join condition on two columns
+CREATE TABLE babel_browse_hk_text (TerminalNr INT NOT NULL, Nr INT NOT NULL, Text VARCHAR(50), CONSTRAINT pk_babel_browse_hk_text PRIMARY KEY (TerminalNr, Nr))
+GO
+
+CREATE TABLE babel_browse_hk_code (TerminalNr INT NOT NULL, Code INT NOT NULL, CONSTRAINT pk_babel_browse_hk_code PRIMARY KEY (TerminalNr, Code))
+GO
+
+INSERT INTO babel_browse_hk_text VALUES (1, 1, 'first')
+GO
+
+INSERT INTO babel_browse_hk_code VALUES (1, 3)
+GO
+
+SELECT t.Name, tp.HerstellerID, tx.Text FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ LEFT JOIN babel_browse_hk_text tx ON tx.TerminalNr = t.TerminalNr ORDER BY t.TerminalNr
+GO
+
+WITH agg AS (SELECT persnr, MIN(Tag) AS MinTag FROM babel_browse_hk_tag GROUP BY persnr)
+SELECT t.Name, agg.MinTag, c.Code, CASE WHEN tx.Nr IS NULL THEN '' ELSE tx.Text END AS txt
+FROM babel_browse_hk_terminal t LEFT JOIN agg ON agg.persnr = t.TerminalNr + 2 LEFT JOIN babel_browse_hk_code c ON c.TerminalNr = t.TerminalNr
+LEFT JOIN babel_browse_hk_text tx ON tx.TerminalNr = c.TerminalNr AND tx.Nr = c.Code - 2 ORDER BY t.TerminalNr
+GO
+
+SELECT t.Name FROM babel_browse_hk_termtyp tp RIGHT JOIN babel_browse_hk_terminal t ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
+GO
+
+SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t FULL OUTER JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
+GO
+
 -- a key column that is selected, also with an alias, is not added again
 SELECT TerminalNr, Name FROM babel_browse_hk_terminal ORDER BY 1
 GO
@@ -136,6 +166,12 @@ DROP TABLE babel_browse_hk_into
 GO
 
 DROP VIEW babel_browse_hk_v
+GO
+
+DROP TABLE babel_browse_hk_code
+GO
+
+DROP TABLE babel_browse_hk_text
 GO
 
 DROP TABLE babel_browse_hk_nokey

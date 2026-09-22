@@ -1259,7 +1259,7 @@ pltsql_pkey_attnums(Oid relid)
  * Queries whose rows are not the rows of the base tables are left alone.
  */
 static void
-pltsql_add_browse_hidden_key_columns(Query *query)
+pltsql_add_browse_hidden_key_columns(ParseState *pstate, Query *query)
 {
 	int			rti = 0;
 	int			resno = list_length(query->targetList);
@@ -1294,6 +1294,7 @@ pltsql_add_browse_hidden_key_columns(Query *query)
 			AttrNumber	attnum = lfirst_int(lk);
 			HeapTuple	tp;
 			Form_pg_attribute att;
+			Var		   *var;
 			TargetEntry *tle;
 			bool		found = false;
 			ListCell   *lt;
@@ -1325,9 +1326,16 @@ pltsql_add_browse_hidden_key_columns(Query *query)
 				continue;
 			}
 
-			tle = makeTargetEntry((Expr *) makeVar(rti, attnum, att->atttypid, att->atttypmod,
-												   att->attcollation, 0),
-								  ++resno, NULL, false);
+			var = makeVar(rti, attnum, att->atttypid, att->atttypmod, att->attcollation, 0);
+
+			/*
+			 * A column of a table on the nullable side of an outer join has
+			 * to carry the join in varnullingrels, like a Var the parser
+			 * makes for the target list.
+			 */
+			markNullableIfNeeded(pstate, var);
+
+			tle = makeTargetEntry((Expr *) var, ++resno, NULL, false);
 			tle->resorigtbl = rte->relid;
 			tle->resorigcol = attnum;
 			/* the name as it was written, if the column has one */
@@ -1361,7 +1369,7 @@ pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 	checkForAuto(query);
 
 	if (pltsql_add_browse_key_columns)
-		pltsql_add_browse_hidden_key_columns(query);
+		pltsql_add_browse_hidden_key_columns(pstate, query);
 
 	if (query->commandType == CMD_INSERT)
 	{
