@@ -9363,6 +9363,51 @@ tsql_set_typmod_op_expr(ParseState *pstate, Node *OpExp, Node *lexpr, Node* rexp
 		return OpExp;
 }
 
+/*
+ * Give the call of a T-SQL function the length, precision and scale of its
+ * return type. RETURNS varchar(255) is stored in probin, the function itself
+ * returns sys.varchar without typmod, so the result of dbo.f(x) was described
+ * as varchar(max) and a view column defined with it stored that. The value is
+ * already cast to the return type when the function returns, the coercion
+ * only carries the typmod into the expression.
+ */
+static Node *
+tsql_set_typmod_udf_result(ParseState *pstate, Node *expr)
+{
+	FuncExpr   *func = (FuncExpr *) expr;
+	HeapTuple	tp;
+	Form_pg_proc procform;
+	Oid			langoid;
+	int32		typmod;
+
+	if (func->funcresulttype == VOIDOID || func->funcretset ||
+		func->funcformat != COERCE_EXPLICIT_CALL)
+		return expr;
+
+	langoid = get_language_oid("pltsql", true);
+	if (!OidIsValid(langoid))
+		return expr;
+
+	tp = SearchSysCache1(PROCOID, ObjectIdGetDatum(func->funcid));
+	if (!HeapTupleIsValid(tp))
+		return expr;
+	procform = (Form_pg_proc) GETSTRUCT(tp);
+	if (procform->prolang != langoid || procform->prokind != PROKIND_FUNCTION)
+	{
+		ReleaseSysCache(tp);
+		return expr;
+	}
+	typmod = probin_read_ret_typmod(func->funcid, procform->pronargs, func->funcresulttype);
+	ReleaseSysCache(tp);
+
+	if (typmod == -1)
+		return expr;
+
+	return coerce_to_target_type(pstate, expr, func->funcresulttype,
+								 func->funcresulttype, typmod,
+								 COERCION_EXPLICIT, COERCE_EXPLICIT_CAST, -1);
+}
+
 static Node*
 pltsql_post_transform_expr_recurse(ParseState *pstate, Node *expr)
 {
@@ -9403,6 +9448,11 @@ pltsql_post_transform_expr_recurse(ParseState *pstate, Node *expr)
 		case T_Aggref:
 			{
 				expr = tsql_set_typmod_aggref(pstate, expr);
+				break;
+			}
+		case T_FuncExpr:
+			{
+				expr = tsql_set_typmod_udf_result(pstate, expr);
 				break;
 			}
 
