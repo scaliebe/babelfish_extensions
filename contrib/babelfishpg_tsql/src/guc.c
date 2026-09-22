@@ -68,6 +68,7 @@ bool		pltsql_showplan_xml = false;
 bool		pltsql_fmtonly = false;
 bool		pltsql_enable_tsql_information_schema = false;
 bool		pltsql_no_browsetable = false;
+bool		pltsql_add_browse_key_columns = false;
 
 char	   *pltsql_host_destribution = NULL;
 char	   *pltsql_host_release = NULL;
@@ -1054,11 +1055,15 @@ define_custom_variables(void)
 							 GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
 							 check_showplan_text, NULL, NULL);
 
+	/*
+	 * Off by default, like in SQL Server. An OLE DB client sets it on to get
+	 * the base tables, key columns and hidden key columns of every result.
+	 */
 	DefineCustomBoolVariable("babelfishpg_tsql.no_browsetable",
 							 gettext_noop("SQL-Server compatibility NO_BROWSETABLE option."),
 							 NULL,
 							 &pltsql_no_browsetable,
-							 true,
+							 false,
 							 PGC_USERSET,
 							 GUC_NOT_IN_SAMPLE | GUC_DISALLOW_IN_FILE | GUC_DISALLOW_IN_AUTO_FILE,
 							 check_no_browsetable, NULL, NULL);

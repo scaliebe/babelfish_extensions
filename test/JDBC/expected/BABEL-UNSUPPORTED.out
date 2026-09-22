@@ -255,6 +255,8 @@ text
 on
 ~~END~~
 
+SET NO_BROWSETABLE OFF;
+GO
 
 -- these statement will be ignored silently
 SET STATISTICS IO ON;

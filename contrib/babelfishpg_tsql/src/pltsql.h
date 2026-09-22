@@ -2514,6 +2514,9 @@ void		prepare_format_string(StringInfo buf, char *msg_string, int nargs,
  */
 void		probin_read_args_typmods(HeapTuple procTup, int nargs, Oid *argtypes, int **typmods);
 int		probin_read_ret_typmod(Oid funcid, int nargs, Oid declared_oid);
+
+/* set while a SELECT that sends its result to the client is prepared with SET NO_BROWSETABLE ON */
+extern bool pltsql_add_browse_key_columns;
 bool		pltsql_function_as_checker(const char *lang, List *as, char **prosrc_str_p, char **probin_str_p);
 void		pltsql_function_probin_writer(CreateFunctionStmt *stmt, Oid languageOid, char **probin_str_p);
 void		pltsql_function_probin_reader(ParseState *pstate,
