@@ -79,6 +79,7 @@ DROP TABLE IF EXISTS dbo.cclass
 DROP TABLE IF EXISTS new_cclass
 CREATE TABLE new_cclass ( class_id INT NOT NULL PRIMARY KEY, class_name VARCHAR(50) NOT NULL, teacher_name VARCHAR(100) NULL )
 fillschema_test#!#SET NO_BROWSETABLE ON; select * from new_cclass
+SET NO_BROWSETABLE OFF
 DROP TABLE IF EXISTS new_cclass
 
 #Test case 12: Stored Procedures

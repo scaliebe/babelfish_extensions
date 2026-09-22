@@ -58,7 +58,25 @@ prepare_stmt_execsql(PLtsql_execstate *estate, PLtsql_function *func, PLtsql_stm
 		!stmt->is_tsql_select_assign_stmt)
 		pltsql_insert_exec_validate_column_count(estate, stmt);
 
-	exec_prepare_plan(estate, expr, CURSOR_OPT_PARALLEL_OK, keepplan);
+	/*
+	 * With SET NO_BROWSETABLE ON the client expects the key columns of the
+	 * base tables in a result, also when the statement does not select
+	 * them, see pltsql_add_browse_hidden_key_columns(). Only a SELECT whose
+	 * rows go to the client gets them: not an assignment, not a cursor, not
+	 * the source of INSERT ... EXEC.
+	 */
+	pltsql_add_browse_key_columns = pltsql_no_browsetable &&
+		stmt->need_to_push_result && !stmt->is_tsql_select_assign_stmt &&
+		!pltsql_insert_exec_active();
+	PG_TRY();
+	{
+		exec_prepare_plan(estate, expr, CURSOR_OPT_PARALLEL_OK, keepplan);
+	}
+	PG_FINALLY();
+	{
+		pltsql_add_browse_key_columns = false;
+	}
+	PG_END_TRY();
 	stmt->mod_stmt = false;
 	stmt->mod_stmt_tablevar = false;
 	foreach(l, SPI_plan_get_plan_sources(expr->plan))

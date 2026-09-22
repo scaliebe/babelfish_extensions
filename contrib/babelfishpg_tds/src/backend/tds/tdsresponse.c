@@ -136,6 +136,9 @@ static void FillTabNameWithoutNumParts(StringInfo buf, uint8 numParts, TdsRelati
 static void SetTdsEstateErrorData(void);
 static void ResetTdsEstateErrorData(void);
 static void SetAttributesForColmetada(TdsColumnMetaData *col);
+static bool PlanHasOuterJoin(PlannedStmt *plannedstmt);
+static bool PlanHasNullingNode(PlannedStmt *plannedstmt);
+static bool PlanTreeHasNullingNode(Plan *plan);
 static bool is_this_a_vector_datatype(Oid oid);
 
 static inline void
@@ -1084,6 +1087,9 @@ SendColInfoToken(int natts, bool sendRowStat)
 			if (strcmp(col->baseColName, col->colName.data) != 0)
 				status |= COLUMN_STATUS_DIFFERENT_NAME;
 
+			if (col->hidden)
+				status |= COLUMN_STATUS_HIDDEN;
+
 			{
 				int			tempatt;
 
@@ -1243,6 +1249,7 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 		TdsColumnMetaData *col = &colMetaData[attno];
 		uint32_t	tdsVersion = GetClientTDSVersion();
 		TargetEntry *tle = NULL;
+		bool		not_null_in_table = false;
 		coll_info_t cinfo = TdsLookupCollationTableCallback(InvalidOid);
 
 		serverCollationOid = cinfo.oid;
@@ -1296,6 +1303,13 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			col->relOid = tle->resorigtbl;
 			col->attrNum = tle->resorigcol;
 
+			/*
+			 * A key column that was added for SET NO_BROWSETABLE ON has no
+			 * resname and the column name in resorigname.
+			 */
+			col->hidden = (tle->resname == NULL && tle->resorigname != NULL &&
+						   OidIsValid(tle->resorigtbl));
+
 			tlist_item = lnext(targetlist, tlist_item);
 		}
 		else
@@ -1304,9 +1318,47 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			appendStringInfoString(&col->colName, NameStr(att->attname));
 			col->relOid = 0;
 			col->attrNum = 0;
+			col->hidden = false;
 		}
 
 		SetAttributesForColmetada(col);
+
+		/*
+		 * Describe a column of a table in the result of a SELECT as NOT NULL
+		 * with a fixed-length type if it is that in its table, like SQL
+		 * Server does. Only if the query has an outer join, or a step that
+		 * can produce NULL for a column of a table (grouping sets, a branch
+		 * of a set operation), the column can be NULL in the result; the
+		 * plan does not tell which column that is, so all columns of such a
+		 * query stay nullable.
+		 */
+		if (OidIsValid(col->relOid) && col->attrNum > 0 &&
+			plannedstmt != NULL && plannedstmt->commandType == CMD_SELECT &&
+			!PlanHasOuterJoin(plannedstmt) && !PlanHasNullingNode(plannedstmt))
+		{
+			Oid			relid = col->relOid;
+			AttrNumber	attnum = col->attrNum;
+			HeapTuple	tp = NULL;
+
+			/* a column of a view is what it is in the base table */
+			if (get_rel_relkind(relid) == RELKIND_VIEW &&
+				!(pltsql_plugin_handler_ptr &&
+				  pltsql_plugin_handler_ptr->pltsql_view_base_column &&
+				  (*pltsql_plugin_handler_ptr->pltsql_view_base_column) (relid, attnum,
+																		 &relid, &attnum)))
+				relid = InvalidOid;
+
+			if (OidIsValid(relid))
+				tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(relid),
+									 Int16GetDatum(attnum));
+
+			if (HeapTupleIsValid(tp))
+			{
+				col->attNotNull = ((Form_pg_attribute) GETSTRUCT(tp))->attnotnull;
+				not_null_in_table = col->attNotNull;
+				ReleaseSysCache(tp);
+			}
+		}
 
 		switch (finfo->sendFuncId)
 		{
@@ -1599,6 +1651,22 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("data type %d not supported yet", atttypid)));
+		}
+
+		/* a NOT NULL column of a character type: flags like SQL Server */
+		if (not_null_in_table)
+		{
+			switch (finfo->sendFuncId)
+			{
+				case TDS_SEND_CHAR:
+				case TDS_SEND_NCHAR:
+				case TDS_SEND_VARCHAR:
+				case TDS_SEND_NVARCHAR:
+					col->metaEntry.type2.flags = TDS_COL_METADATA_NOT_NULL_FLAGS;
+					break;
+				default:
+					break;
+			}
 		}
 	}
 
@@ -2453,6 +2521,17 @@ TdsPrintTup(TupleTableSlot *slot, DestReceiver *self)
 		if (slot->tts_isnull[attno])
 		{
 			/* Handle NULL values */
+
+			/*
+			 * A column that was described as NOT NULL has a type without
+			 * room for NULL; do not send a row the client cannot read.
+			 */
+			if (col->attNotNull)
+				ereport(ERROR,
+						(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+						 errmsg("NULL value in column \"%s\" that was described as NOT NULL",
+								col->colName.data)));
+
 			/*
 			 * when NBCROW token is used, all NULL values are sent using NULL
 			 * bitmap only
@@ -3083,6 +3162,93 @@ GetTdsEstateErrorData(int *number, int *severity, int *state)
 
 /*
  */
+/*
+ * Does the range table of the plan contain an outer join?
+ */
+static bool
+PlanHasOuterJoin(PlannedStmt *plannedstmt)
+{
+	ListCell   *lc;
+
+	if (plannedstmt == NULL)
+		return true;
+
+	foreach(lc, plannedstmt->rtable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+
+		if (rte->rtekind == RTE_JOIN && rte->jointype != JOIN_INNER)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Does the plan contain a node that can put NULL into a column of a table:
+ * an aggregate or grouping step (grouping sets), a set operation or an append
+ * step (the column has the origin of the first branch, another branch can be
+ * NULL), a window step? Walks the plan tree by hand, planstate_tree_walker
+ * needs a PlanState.
+ */
+static bool
+PlanTreeHasNullingNode(Plan *plan)
+{
+	ListCell   *lc;
+
+	if (plan == NULL)
+		return false;
+
+	switch (nodeTag(plan))
+	{
+		case T_Agg:
+		case T_Group:
+		case T_WindowAgg:
+		case T_SetOp:
+		case T_RecursiveUnion:
+		case T_Append:
+		case T_MergeAppend:
+			return true;
+		case T_BitmapAnd:
+			foreach(lc, ((BitmapAnd *) plan)->bitmapplans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		case T_BitmapOr:
+			foreach(lc, ((BitmapOr *) plan)->bitmapplans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		case T_SubqueryScan:
+			if (PlanTreeHasNullingNode(((SubqueryScan *) plan)->subplan))
+				return true;
+			break;
+		case T_CustomScan:
+			foreach(lc, ((CustomScan *) plan)->custom_plans)
+				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+					return true;
+			break;
+		default:
+			break;
+	}
+
+	return PlanTreeHasNullingNode(plan->lefttree) || PlanTreeHasNullingNode(plan->righttree);
+}
+
+static bool
+PlanHasNullingNode(PlannedStmt *plannedstmt)
+{
+	ListCell   *lc;
+
+	if (plannedstmt == NULL)
+		return true;
+	if (PlanTreeHasNullingNode(plannedstmt->planTree))
+		return true;
+	foreach(lc, plannedstmt->subplans)
+		if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
+			return true;
+	return false;
+}
+
 static void
 SetAttributesForColmetada(TdsColumnMetaData *col)
 {

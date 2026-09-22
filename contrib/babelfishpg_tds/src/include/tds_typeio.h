@@ -191,6 +191,7 @@ typedef struct TdsColumnMetaData
 	 * COLINFO tokens.
 	 */
 	char	   *baseColName;	/* actual column name if any alias is used */
+	bool		hidden;			/* key column added for SET NO_BROWSETABLE ON */
 	Oid			relOid;			/* relation that this column belongs to (0 if
 								 * an expression column */
 	AttrNumber	attrNum;		/* attribute number in the relation */
