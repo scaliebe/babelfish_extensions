@@ -23,8 +23,8 @@ GO
 SELECT t.*, tp.HerstellerID FROM babel_no_browsetable_t1 t LEFT JOIN babel_no_browsetable_t2 tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1 ORDER BY TerminalNr
 GO
 ~~START~~
-int#!#varchar#!#int#!#int
-1#!#T1#!#7#!#99
+int#!#varchar#!#int#!#int#!#int
+1#!#T1#!#7#!#99#!#7
 ~~END~~
 
 
@@ -74,6 +74,9 @@ int#!#varchar#!#int
 2#!#T2#!#<NULL>
 ~~END~~
 
+
+SET NO_BROWSETABLE OFF
+GO
 
 DROP TABLE babel_no_browsetable_t2
 GO

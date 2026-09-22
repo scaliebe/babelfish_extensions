@@ -37,6 +37,9 @@ GO
 SELECT * FROM babel_no_browsetable_t1 ORDER BY TerminalNr
 GO
 
+SET NO_BROWSETABLE OFF
+GO
+
 DROP TABLE babel_no_browsetable_t2
 GO
 
