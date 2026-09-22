@@ -16,12 +16,15 @@
 #include "postgres.h"
 
 #include "access/attnum.h"
+#include "access/genam.h"
 #include "access/relation.h"
+#include "access/sysattr.h"
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/table.h"
 #include "catalog/heap.h"
 #include "catalog/indexing.h"
+#include "catalog/pg_index.h"
 #include "catalog/namespace.h"
 #include "catalog/pg_authid.h"
 #include "catalog/pg_collation.h"
@@ -70,6 +73,7 @@
 #include "utils/builtins.h"
 #include "utils/guc_tables.h"
 #include "utils/inval.h"
+#include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
 #include "utils/plancache.h"
 #include "utils/ps_status.h"
@@ -1137,6 +1141,140 @@ pltsql_pre_parse_analyze(ParseState *pstate, RawStmt *parseTree)
 	}
 }
 
+/*
+ * Primary key attributes of a relation, like the TDS layer finds them for
+ * the KEY status of a column.
+ */
+static List *
+pltsql_pkey_attnums(Oid relid)
+{
+	Relation	indexRelation;
+	ScanKeyData skey;
+	SysScanDesc scan;
+	HeapTuple	indexTuple;
+	List	   *result = NIL;
+
+	indexRelation = table_open(IndexRelationId, AccessShareLock);
+	ScanKeyInit(&skey, Anum_pg_index_indrelid, BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(relid));
+	scan = systable_beginscan(indexRelation, IndexIndrelidIndexId, true, NULL, 1, &skey);
+
+	while (HeapTupleIsValid(indexTuple = systable_getnext(scan)))
+	{
+		Form_pg_index index = (Form_pg_index) GETSTRUCT(indexTuple);
+
+		if (index->indisprimary)
+		{
+			int			i;
+
+			for (i = 0; i < index->indnkeyatts; i++)
+				result = lappend_int(result, index->indkey.values[i]);
+			break;
+		}
+	}
+
+	systable_endscan(scan);
+	table_close(indexRelation, AccessShareLock);
+
+	return result;
+}
+
+/*
+ * With SET NO_BROWSETABLE ON, SQL Server adds the primary key columns of
+ * every base table of a SELECT that the statement does not select to the
+ * result, as hidden columns: the client needs them to update the rows. Add
+ * them to the target list. They have no resname and carry the column name
+ * in resorigname, which is how the TDS layer tells them from the columns of
+ * the statement and marks them HIDDEN in the COLINFO token.
+ *
+ * Queries whose rows are not the rows of the base tables are left alone.
+ */
+static void
+pltsql_add_browse_hidden_key_columns(Query *query)
+{
+	int			rti = 0;
+	int			resno = list_length(query->targetList);
+	ListCell   *lc;
+
+	if (query->commandType != CMD_SELECT || query->utilityStmt != NULL ||
+		query->setOperations != NULL || query->hasAggs || query->hasWindowFuncs ||
+		query->hasTargetSRFs || query->groupClause != NIL || query->groupingSets != NIL ||
+		query->havingQual != NULL || query->distinctClause != NIL)
+		return;
+
+	foreach(lc, query->rtable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+		RTEPermissionInfo *perminfo;
+		List	   *keyattrs;
+		ListCell   *lk;
+
+		rti++;
+		if (rte->rtekind != RTE_RELATION || !rte->inFromCl ||
+			(rte->relkind != RELKIND_RELATION && rte->relkind != RELKIND_PARTITIONED_TABLE))
+			continue;
+
+		keyattrs = pltsql_pkey_attnums(rte->relid);
+		if (keyattrs == NIL)
+			continue;
+
+		perminfo = getRTEPermissionInfo(query->rteperminfos, rte);
+
+		foreach(lk, keyattrs)
+		{
+			AttrNumber	attnum = lfirst_int(lk);
+			HeapTuple	tp;
+			Form_pg_attribute att;
+			TargetEntry *tle;
+			bool		found = false;
+			ListCell   *lt;
+
+			/* already selected? */
+			foreach(lt, query->targetList)
+			{
+				TargetEntry *te = (TargetEntry *) lfirst(lt);
+
+				if (!te->resjunk && IsA(te->expr, Var) &&
+					((Var *) te->expr)->varno == rti &&
+					((Var *) te->expr)->varattno == attnum &&
+					((Var *) te->expr)->varlevelsup == 0)
+				{
+					found = true;
+					break;
+				}
+			}
+			if (found)
+				continue;
+
+			tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(rte->relid), Int16GetDatum(attnum));
+			if (!HeapTupleIsValid(tp))
+				continue;
+			att = (Form_pg_attribute) GETSTRUCT(tp);
+			if (att->attisdropped)
+			{
+				ReleaseSysCache(tp);
+				continue;
+			}
+
+			tle = makeTargetEntry((Expr *) makeVar(rti, attnum, att->atttypid, att->atttypmod,
+												   att->attcollation, 0),
+								  ++resno, NULL, false);
+			tle->resorigtbl = rte->relid;
+			tle->resorigcol = attnum;
+			/* the name as it was written, if the column has one */
+			tle->resorigname = get_bbf_original_column_name(rte->relid, attnum);
+			if (tle->resorigname == NULL)
+				tle->resorigname = pstrdup(NameStr(att->attname));
+			ReleaseSysCache(tp);
+
+			query->targetList = lappend(query->targetList, tle);
+			perminfo->selectedCols = bms_add_member(perminfo->selectedCols,
+													attnum - FirstLowInvalidHeapAttributeNumber);
+		}
+		list_free(keyattrs);
+	}
+}
+
 static void
 pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 {
@@ -1152,6 +1290,9 @@ pltsql_post_parse_analyze(ParseState *pstate, Query *query, JumbleState *jstate)
 
 	(void) mark_outside_view((Query*) query);
 	checkForAuto(query);
+
+	if (pltsql_add_browse_key_columns)
+		pltsql_add_browse_hidden_key_columns(query);
 
 	if (query->commandType == CMD_INSERT)
 	{

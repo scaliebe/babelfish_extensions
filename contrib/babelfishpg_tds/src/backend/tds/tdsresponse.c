@@ -1084,6 +1084,9 @@ SendColInfoToken(int natts, bool sendRowStat)
 			if (strcmp(col->baseColName, col->colName.data) != 0)
 				status |= COLUMN_STATUS_DIFFERENT_NAME;
 
+			if (col->hidden)
+				status |= COLUMN_STATUS_HIDDEN;
+
 			{
 				int			tempatt;
 
@@ -1296,6 +1299,13 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			col->relOid = tle->resorigtbl;
 			col->attrNum = tle->resorigcol;
 
+			/*
+			 * A key column that was added for SET NO_BROWSETABLE ON has no
+			 * resname and the column name in resorigname.
+			 */
+			col->hidden = (tle->resname == NULL && tle->resorigname != NULL &&
+						   OidIsValid(tle->resorigtbl));
+
 			tlist_item = lnext(targetlist, tlist_item);
 		}
 		else
@@ -1304,6 +1314,7 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			appendStringInfoString(&col->colName, NameStr(att->attname));
 			col->relOid = 0;
 			col->attrNum = 0;
+			col->hidden = false;
 		}
 
 		SetAttributesForColmetada(col);
