@@ -380,6 +380,7 @@ Primary Key Columns:
 - class_id
 ~~END~~
 
+SET NO_BROWSETABLE OFF
 DROP TABLE IF EXISTS new_cclass
 
 #Test case 12: Stored Procedures

@@ -136,6 +136,7 @@ static void FillTabNameWithoutNumParts(StringInfo buf, uint8 numParts, TdsRelati
 static void SetTdsEstateErrorData(void);
 static void ResetTdsEstateErrorData(void);
 static void SetAttributesForColmetada(TdsColumnMetaData *col);
+static bool PlanHasOuterJoin(PlannedStmt *plannedstmt);
 static bool is_this_a_vector_datatype(Oid oid);
 
 static inline void
@@ -1084,6 +1085,9 @@ SendColInfoToken(int natts, bool sendRowStat)
 			if (strcmp(col->baseColName, col->colName.data) != 0)
 				status |= COLUMN_STATUS_DIFFERENT_NAME;
 
+			if (col->hidden)
+				status |= COLUMN_STATUS_HIDDEN;
+
 			{
 				int			tempatt;
 
@@ -1296,6 +1300,13 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			col->relOid = tle->resorigtbl;
 			col->attrNum = tle->resorigcol;
 
+			/*
+			 * A key column that was added for SET NO_BROWSETABLE ON has no
+			 * resname and the column name in resorigname.
+			 */
+			col->hidden = (tle->resname == NULL && tle->resorigname != NULL &&
+						   OidIsValid(tle->resorigtbl));
+
 			tlist_item = lnext(targetlist, tlist_item);
 		}
 		else
@@ -1304,9 +1315,29 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 			appendStringInfoString(&col->colName, NameStr(att->attname));
 			col->relOid = 0;
 			col->attrNum = 0;
+			col->hidden = false;
 		}
 
 		SetAttributesForColmetada(col);
+
+		/*
+		 * SQL Server sends a hidden key column as NOT NULL with a fixed-length
+		 * type, which it is in its table. Only if the query has an outer join
+		 * the column can be NULL in the result; the plan does not tell which
+		 * table is on the nullable side, so all hidden columns of such a
+		 * query stay nullable.
+		 */
+		if (col->hidden && !PlanHasOuterJoin(plannedstmt))
+		{
+			HeapTuple	tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(col->relOid),
+											 Int16GetDatum(col->attrNum));
+
+			if (HeapTupleIsValid(tp))
+			{
+				col->attNotNull = ((Form_pg_attribute) GETSTRUCT(tp))->attnotnull;
+				ReleaseSysCache(tp);
+			}
+		}
 
 		switch (finfo->sendFuncId)
 		{
@@ -1599,6 +1630,22 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 				ereport(ERROR,
 						(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						 errmsg("data type %d not supported yet", atttypid)));
+		}
+
+		/* a NOT NULL hidden key column of a character type: flags like SQL Server */
+		if (col->hidden && col->attNotNull)
+		{
+			switch (finfo->sendFuncId)
+			{
+				case TDS_SEND_CHAR:
+				case TDS_SEND_NCHAR:
+				case TDS_SEND_VARCHAR:
+				case TDS_SEND_NVARCHAR:
+					col->metaEntry.type2.flags = TDS_COL_METADATA_NOT_NULL_FLAGS;
+					break;
+				default:
+					break;
+			}
 		}
 	}
 
@@ -3083,6 +3130,27 @@ GetTdsEstateErrorData(int *number, int *severity, int *state)
 
 /*
  */
+/*
+ * Does the range table of the plan contain an outer join?
+ */
+static bool
+PlanHasOuterJoin(PlannedStmt *plannedstmt)
+{
+	ListCell   *lc;
+
+	if (plannedstmt == NULL)
+		return true;
+
+	foreach(lc, plannedstmt->rtable)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(lc);
+
+		if (rte->rtekind == RTE_JOIN && rte->jointype != JOIN_INNER)
+			return true;
+	}
+	return false;
+}
+
 static void
 SetAttributesForColmetada(TdsColumnMetaData *col)
 {
