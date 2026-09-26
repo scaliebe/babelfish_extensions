@@ -73,6 +73,51 @@ GO
 SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t FULL OUTER JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
 GO
 
+-- a view is resolved to its base tables: the columns of the view are
+-- described as columns of the base tables, the keys of the base tables are
+-- added, an expression column of the view is an expression
+CREATE VIEW babel_browse_hk_v2 AS
+SELECT a.TerminalNr, a.Name, a.Name + 'x' AS Namex, g.HerstellerID FROM babel_browse_hk_terminal a LEFT JOIN babel_browse_hk_termtyp g ON g.TermTypID = a.Typ
+GO
+
+SELECT Name, HerstellerID FROM babel_browse_hk_v2 WHERE 1 = 1 ORDER BY Name
+GO
+
+SELECT vz.TerminalNr, vz.Namex FROM babel_browse_hk_v2 vz ORDER BY vz.TerminalNr
+GO
+
+-- a view over a view, and a view that does not project the key
+CREATE VIEW babel_browse_hk_v3 AS SELECT TerminalNr AS Nr, Name AS N FROM babel_browse_hk_v2
+GO
+
+SELECT N FROM babel_browse_hk_v3 ORDER BY N
+GO
+
+CREATE VIEW babel_browse_hk_v4 AS SELECT Name, Typ FROM babel_browse_hk_terminal
+GO
+
+SELECT Name FROM babel_browse_hk_v4 ORDER BY Name
+GO
+
+-- a view with an aggregate: nothing is added
+CREATE VIEW babel_browse_hk_v5 AS SELECT persnr, COUNT(*) AS n FROM babel_browse_hk_tag GROUP BY persnr
+GO
+
+SELECT n FROM babel_browse_hk_v5
+GO
+
+DROP VIEW babel_browse_hk_v5
+GO
+
+DROP VIEW babel_browse_hk_v4
+GO
+
+DROP VIEW babel_browse_hk_v3
+GO
+
+DROP VIEW babel_browse_hk_v2
+GO
+
 -- a key column that is selected, also with an alias, is not added again
 SELECT TerminalNr, Name FROM babel_browse_hk_terminal ORDER BY 1
 GO

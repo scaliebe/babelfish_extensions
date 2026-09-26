@@ -366,11 +366,11 @@ Table Columns:
 Column: class_id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: class_name
   - Is Primary Key: False
   - Data Type: System.String
-  - Allow Null: True
+  - Allow Null: False
 Column: teacher_name
   - Is Primary Key: False
   - Data Type: System.String
