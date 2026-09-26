@@ -151,12 +151,16 @@ void	   *get_language(void);
 void	   *get_host_id(void);
 
 Datum 		datepart_internal(char *field , Timestamp timestamp , float8 df_tz, bool general_integer_datatype);
-static HTAB *load_categories_hash(const char *sourcetext, MemoryContext per_query_ctx);
-static Tuplestorestate *get_bbf_pivot_tuplestore(const char 	*sourcetext,
-												 const char 	*funcName,
-												 HTAB 			*bbf_pivot_hash,
-												 TupleDesc 		tupdesc,
-												 bool 			randomAccess);
+static HTAB *load_categories_hash(const char *sourcetext, ParamListInfo params, MemoryContext per_query_ctx);
+static int	bbf_pivot_execute(const char *sourcetext, ParamListInfo params);
+static void bbf_pivot_parser_setup(ParseState *pstate, void *arg);
+static Node *bbf_pivot_param_ref(ParseState *pstate, ParamRef *pref);
+static Tuplestorestate *get_bbf_pivot_tuplestore(const char *sourcetext,
+												 ParamListInfo params,
+												 const char *funcName,
+												 HTAB *bbf_pivot_hash,
+												 TupleDesc tupdesc,
+												 bool randomAccess);
 
 extern bool canCommitTransaction(void);
 extern bool is_ms_shipped(char *object_name, int type, Oid schema_id);
@@ -5108,6 +5112,69 @@ objectpropertyex_internal(PG_FUNCTION_ARGS)
 	PG_RETURN_BYTEA_P((*common_utility_plugin_ptr->convertIntToSQLVariantByteA)(result));
 }
 
+/*
+ * $n in the source text of PIVOT stands for the n-th parameter of the
+ * statement that runs it, a T-SQL variable, see pivot_src_parser_setup()
+ * in hooks.c. The ParamListInfo of the statement has its type and serves
+ * its value; the list can be a copy without the pltsql hooks, so only the
+ * generic fields are used.
+ */
+static Node *
+bbf_pivot_param_ref(ParseState *pstate, ParamRef *pref)
+{
+	ParamListInfo params = (ParamListInfo) pstate->p_ref_hook_state;
+	ParamExternData *prm;
+	ParamExternData prmdata;
+	Param	   *param;
+
+	if (params == NULL || pref->number < 1 || pref->number > params->numParams)
+		return NULL;
+
+	if (params->paramFetch != NULL)
+		prm = params->paramFetch(params, pref->number, false, &prmdata);
+	else
+		prm = &params->params[pref->number - 1];
+	if (prm == NULL || !OidIsValid(prm->ptype))
+		return NULL;
+
+	param = makeNode(Param);
+	param->paramkind = PARAM_EXTERN;
+	param->paramid = pref->number;
+	param->paramtype = prm->ptype;
+	param->paramtypmod = -1;
+	param->paramcollid = get_typcollation(prm->ptype);
+	param->location = pref->location;
+
+	return (Node *) param;
+}
+
+static void
+bbf_pivot_parser_setup(ParseState *pstate, void *arg)
+{
+	pstate->p_paramref_hook = bbf_pivot_param_ref;
+	pstate->p_ref_hook_state = arg;
+}
+
+/*
+ * Run one of the queries of PIVOT. With the parameters of a T-SQL statement
+ * the text can refer to its variables as $n.
+ */
+static int
+bbf_pivot_execute(const char *sourcetext, ParamListInfo params)
+{
+	if (params != NULL && params->numParams > 0)
+	{
+		SPIPlanPtr	plan = SPI_prepare_params(sourcetext, bbf_pivot_parser_setup, params, 0);
+
+		if (plan == NULL)
+			elog(ERROR, "bbf_pivot: SPI_prepare_params failed: %s", SPI_result_code_string(SPI_result));
+
+		return SPI_execute_plan_with_paramlist(plan, params, true, 0);
+	}
+
+	return SPI_execute(sourcetext, true, 0);
+}
+
 PG_FUNCTION_INFO_V1(bbf_pivot);
 Datum
 bbf_pivot(PG_FUNCTION_ARGS)
@@ -5165,13 +5232,14 @@ bbf_pivot(PG_FUNCTION_ARGS)
 						"bbf_pivot function are not compatible")));
 
 	/* load up the categories hash table */
-	bbf_pivot_hash = load_categories_hash(cat_sql_string, per_query_ctx);
+	bbf_pivot_hash = load_categories_hash(cat_sql_string, rsinfo->econtext->ecxt_param_list_info, per_query_ctx);
 
 	/* let the caller know we're sending back a tuplestore */
 	rsinfo->returnMode = SFRM_Materialize;
 
 	/* now go build it */
 	rsinfo->setResult = get_bbf_pivot_tuplestore(src_sql_string,
+												rsinfo->econtext->ecxt_param_list_info,
 												funcName,
 												bbf_pivot_hash,
 												tupdesc,
@@ -5194,8 +5262,9 @@ bbf_pivot(PG_FUNCTION_ARGS)
  * load up the categories hash table
  */
 static HTAB *
-load_categories_hash(const char 	*sourcetext, 
-					 MemoryContext 	per_query_ctx)
+load_categories_hash(const char *sourcetext,
+					 ParamListInfo params,
+					 MemoryContext per_query_ctx)
 {
 	HTAB	   *bbf_pivot_hash;
 	HASHCTL		ctl;
@@ -5223,7 +5292,7 @@ load_categories_hash(const char 	*sourcetext,
 		elog(ERROR, "load_categories_hash: SPI_connect returned %d", ret);
 
 	/* Retrieve the category name rows */
-	ret = SPI_execute(sourcetext, true, 0);
+	ret = bbf_pivot_execute(sourcetext, params);
 	tuple_processed = SPI_processed;
 
 	/* Check for qualifying tuples */
@@ -5286,11 +5355,12 @@ load_categories_hash(const char 	*sourcetext,
  * create and populate the bbf_pivot tuplestore
  */
 static Tuplestorestate *
-get_bbf_pivot_tuplestore(const char 	*sourcetext,
-						 const char		*funcName,
-						 HTAB 			*bbf_pivot_hash,
-						 TupleDesc 		tupdesc,
-						 bool 			randomAccess)
+get_bbf_pivot_tuplestore(const char *sourcetext,
+						 ParamListInfo params,
+						 const char *funcName,
+						 HTAB *bbf_pivot_hash,
+						 TupleDesc tupdesc,
+						 bool randomAccess)
 {
 	Tuplestorestate *tupstore;
 	int			num_categories = hash_get_num_entries(bbf_pivot_hash);
@@ -5309,7 +5379,7 @@ get_bbf_pivot_tuplestore(const char 	*sourcetext,
 		elog(ERROR, "get_bbf_pivot_tuplestore: SPI_connect returned %d", ret);
 
 	/* Now retrieve the bbf_pivot source rows */
-	ret = SPI_execute(sourcetext, true, 0);
+	ret = bbf_pivot_execute(sourcetext, params);
 	tuple_processed = SPI_processed;
 
 	/* Check for qualifying tuples */

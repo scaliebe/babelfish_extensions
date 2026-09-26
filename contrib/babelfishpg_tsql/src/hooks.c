@@ -200,6 +200,8 @@ static ResTarget* make_restarget_from_cstr_list(List * l);
 static SortByNulls unique_constraint_nulls_ordering(ConstrType constraint_type,
 													SortByDir ordering);
 static void transform_pivot_clause(ParseState *pstate, SelectStmt *stmt);
+static void pivot_src_parser_setup(ParseState *pstate, void *arg);
+static Query *pivot_analyze(RawStmt *rawstmt, ParseState *pstate);
 static void transform_unpivot_clause(ParseState *pstate, SelectStmt *stmt);
 static bool transform_unpivot_clause_recursive(Node **node, List **measure_cols, List **unpivot_src_cols);
 static void transform_tsql_select_statement(ParseState *pstate, SelectStmt *stmt);
@@ -6404,7 +6406,40 @@ make_restarget_from_cstr_list(List * l)
 	return tempResTarget;
 }
 
-static void 
+/*
+ * The source query and the category query of PIVOT are analyzed with the
+ * column and parameter hooks of the statement they are in, so that a T-SQL
+ * variable in them (WHERE Jahr = @Jahr) is resolved like anywhere else in
+ * the statement. It becomes a Param of the datum, and the deparsed text
+ * that sys.bbf_pivot() runs has $n for it; bbf_pivot() maps $n back to the
+ * datum, see bbf_pivot_param_ref().
+ */
+static void
+pivot_src_parser_setup(ParseState *pstate, void *arg)
+{
+	ParseState *outer = (ParseState *) arg;
+
+	pstate->p_pre_columnref_hook = outer->p_pre_columnref_hook;
+	pstate->p_post_columnref_hook = outer->p_post_columnref_hook;
+	pstate->p_paramref_hook = outer->p_paramref_hook;
+	pstate->p_ref_hook_state = outer->p_ref_hook_state;
+}
+
+/*
+ * Outside of a T-SQL function or batch (CREATE VIEW) there are no hooks;
+ * parse_analyze_withcb() would call the NULL callback.
+ */
+static Query *
+pivot_analyze(RawStmt *rawstmt, ParseState *pstate)
+{
+	if (pstate->p_ref_hook_state != NULL)
+		return parse_analyze_withcb(rawstmt, pstrdup(pstate->p_sourcetext),
+									pivot_src_parser_setup, pstate, NULL);
+
+	return parse_analyze_fixedparams(rawstmt, pstrdup(pstate->p_sourcetext), NULL, 0, NULL);
+}
+
+static void
 transform_pivot_clause(ParseState *pstate, SelectStmt *stmt)
 {
 	Query		*temp_src_query;
@@ -6581,14 +6616,10 @@ transform_pivot_clause(ParseState *pstate, SelectStmt *stmt)
 	cat_sql_rawstmt->stmt_len = 0;
 
 	/* get psql-text of src_sql and cat_sql */
-	src_sql_query = parse_analyze_fixedparams((RawStmt *) copyObject(src_sql_rawstmt), 
-												pstrdup(pstate->p_sourcetext), 
-												NULL, 0, NULL);
+	src_sql_query = pivot_analyze((RawStmt *) copyObject(src_sql_rawstmt), pstate);
 	src_sql_string = pg_get_querydef(src_sql_query, true);
 
-	cat_sql_query = parse_analyze_fixedparams((RawStmt *) copyObject(cat_sql_rawstmt), 
-												pstrdup(pstate->p_sourcetext), 
-												NULL, 0, NULL);
+	cat_sql_query = pivot_analyze((RawStmt *) copyObject(cat_sql_rawstmt), pstate);
 	cat_sql_string = pg_get_querydef(cat_sql_query, true);
 
 	/* Store pivot information in FuncCall to live through parser analyzer */
