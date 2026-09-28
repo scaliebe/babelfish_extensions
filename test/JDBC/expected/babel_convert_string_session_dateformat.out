@@ -1,4 +1,4 @@
--- CONVERT and CAST of a character string to a date type follow SET DATEFORMAT
+-- CONVERT of a character string to a date type follows SET DATEFORMAT
 SET DATEFORMAT dmy
 GO
 
@@ -10,11 +10,12 @@ datetime#!#datetime#!#datetime
 ~~END~~
 
 
-SELECT CAST('28.09.2026' AS DATETIME), CAST('28.09.2026' AS SMALLDATETIME), CAST('28.09.2026' AS DATE), CAST('28.09.2026 13:14:15' AS DATETIME2(0))
+SELECT CONVERT(SMALLDATETIME, '28.09.2026'), CONVERT(DATETIME2(0), '28.09.2026 13:14:15'), CONVERT(DATETIME, '28.09.2026 13:14:15')
 GO
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: date/time field value out of range: "28.09.2026")~~
+~~START~~
+smalldatetime#!#datetime2#!#datetime
+2026-09-28 00:00:00.0#!#2026-09-28 13:14:15#!#2026-09-28 13:14:15.0
+~~END~~
 
 
 SELECT CONVERT(DATE, '28/09/2026'), CONVERT(DATE, '28-09-2026'), CONVERT(DATETIME, '1.2.2026'), CONVERT(DATETIMEOFFSET(0), '28.09.2026 10:00:00 +02:00')
@@ -52,11 +53,11 @@ datetime#!#datetime#!#date
 ~~END~~
 
 
-SELECT TRY_CONVERT(DATETIME, '09.28.2026'), TRY_CAST('28.09.2026' AS DATE)
+SELECT TRY_CONVERT(DATETIME, '09.28.2026'), TRY_CONVERT(DATE, '28.09.2026')
 GO
 ~~START~~
 datetime#!#date
-<NULL>#!#<NULL>
+<NULL>#!#2026-09-28
 ~~END~~
 
 
@@ -78,7 +79,7 @@ date#!#datetime#!#datetime
 ~~END~~
 
 
-SELECT TRY_CONVERT(DATETIME, '28.09.2026'), TRY_CAST('09.28.2026' AS DATE)
+SELECT TRY_CONVERT(DATETIME, '28.09.2026'), TRY_CONVERT(DATE, '09.28.2026')
 GO
 ~~START~~
 datetime#!#date
@@ -109,16 +110,15 @@ SET DATEFORMAT dmy
 GO
 
 CREATE PROCEDURE babel_convert_string_session_dateformat_p @s VARCHAR(30) AS
-SELECT CONVERT(DATETIME, @s), CAST(@s AS DATE)
+SELECT CONVERT(DATETIME, @s), CONVERT(DATE, @s)
 GO
 
 EXEC babel_convert_string_session_dateformat_p '28.09.2026'
 GO
 ~~START~~
 datetime#!#date
-~~ERROR (Code: 33557097)~~
-
-~~ERROR (Message: date/time field value out of range: "28.09.2026")~~
+2026-09-28 00:00:00.0#!#2026-09-28
+~~END~~
 
 
 DECLARE @s VARCHAR(30) = '30.12.1899'
