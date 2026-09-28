@@ -2535,6 +2535,7 @@ DECLARE
     v_lang_data_jsonb JSONB;
     v_lang_spec_culture VARCHAR COLLATE "C";
     v_is_cached BOOLEAN := FALSE;
+    v_session_dateformat VARCHAR COLLATE "C";
 BEGIN
     v_lang_spec_culture := pg_catalog.upper(pg_catalog.btrim(p_lang_spec_culture));
 
@@ -2629,6 +2630,29 @@ BEGIN
             -- This exception will only occur when we are trying to set config in parallel mode
             -- we can ignore this error as we cannot store this config during a parallel operation
         END;
+    END IF;
+
+    /*
+     * Without a culture, the order of the date parts is the one of the session:
+     * SET DATEFORMAT, or else the order of DateStyle if it is not the default.
+     */
+    IF (char_length(pg_catalog.btrim(p_lang_spec_culture)) = 0)
+    THEN
+        v_session_dateformat := pg_catalog.upper(coalesce(current_setting('babelfishpg_tsql.dateformat', true), ''));
+
+        IF (v_session_dateformat NOT IN ('MDY', 'DMY', 'YMD', 'YDM', 'MYD', 'DYM'))
+        THEN
+            v_session_dateformat := CASE
+                                       WHEN (current_setting('DateStyle') ~* 'DMY') THEN 'DMY'
+                                       WHEN (current_setting('DateStyle') ~* 'YMD') THEN 'YMD'
+                                       ELSE NULL
+                                    END;
+        END IF;
+
+        IF (v_session_dateformat IS NOT NULL)
+        THEN
+            v_lang_data_jsonb := jsonb_set(v_lang_data_jsonb, '{date_format}', to_jsonb(v_session_dateformat::TEXT));
+        END IF;
     END IF;
 
     RETURN v_lang_data_jsonb;

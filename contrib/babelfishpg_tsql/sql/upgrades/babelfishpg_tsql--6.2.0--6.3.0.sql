@@ -5219,6 +5219,153 @@ CREATE OR REPLACE VIEW information_schema_tsql.SEQUENCES AS
 
 GRANT SELECT ON information_schema_tsql.sequences TO PUBLIC;
 
+-- The order of the date parts of the session for the conversion of character strings
+CREATE OR REPLACE FUNCTION sys.babelfish_get_lang_metadata_json(IN p_lang_spec_culture TEXT)
+RETURNS JSONB
+AS
+$BODY$
+DECLARE
+    v_locale_parts TEXT[] COLLATE "C";
+    v_lang_data_jsonb JSONB;
+    v_lang_spec_culture VARCHAR COLLATE "C";
+    v_is_cached BOOLEAN := FALSE;
+    v_session_dateformat VARCHAR COLLATE "C";
+BEGIN
+    v_lang_spec_culture := pg_catalog.upper(pg_catalog.btrim(p_lang_spec_culture));
+
+    IF (char_length(v_lang_spec_culture) > 0)
+    THEN
+        BEGIN
+            v_lang_data_jsonb := nullif(current_setting(format('sys.lang_metadata_json.%s',
+                                                               v_lang_spec_culture)), '')::JSONB;
+        EXCEPTION
+            WHEN undefined_object THEN
+            v_lang_data_jsonb := NULL;
+        END;
+
+        IF (v_lang_data_jsonb IS NULL)
+        THEN
+            v_lang_spec_culture := pg_catalog.upper(regexp_replace(v_lang_spec_culture, '-\s*', '_', 'gi'));
+            IF (v_lang_spec_culture IN ('AR', 'FI') OR
+                v_lang_spec_culture ~ '_')
+            THEN
+                SELECT lang_data_jsonb
+                  INTO STRICT v_lang_data_jsonb
+                  FROM sys.babelfish_syslanguages
+                 WHERE spec_culture = v_lang_spec_culture;
+            ELSE
+                SELECT lang_data_jsonb
+                  INTO STRICT v_lang_data_jsonb
+                  FROM sys.babelfish_syslanguages
+                 WHERE lang_name_mssql = v_lang_spec_culture
+                    OR lang_alias_mssql = v_lang_spec_culture;
+            END IF;
+        ELSE
+            v_is_cached := TRUE;
+        END IF;
+    ELSE
+        v_lang_spec_culture := current_setting('LC_TIME');
+
+        v_lang_spec_culture := CASE
+                                  WHEN (v_lang_spec_culture !~ '\.') THEN v_lang_spec_culture
+                                  ELSE substring(v_lang_spec_culture, '(.*)(?:\.)'::text)
+                               END;
+
+        v_lang_spec_culture := pg_catalog.upper(regexp_replace(v_lang_spec_culture, ',\s*', '_', 'gi'::text));
+
+        BEGIN
+            v_lang_data_jsonb := nullif(current_setting(format('sys.lang_metadata_json.%s',
+                                                               v_lang_spec_culture)), '')::JSONB;
+        EXCEPTION
+            WHEN undefined_object THEN
+            v_lang_data_jsonb := NULL;
+        END;
+
+        IF (v_lang_data_jsonb IS NULL)
+        THEN
+            BEGIN
+                IF (char_length(v_lang_spec_culture) = 5)
+                THEN
+                    SELECT lang_data_jsonb
+                      INTO STRICT v_lang_data_jsonb
+                      FROM sys.babelfish_syslanguages
+                     WHERE spec_culture = v_lang_spec_culture::text;
+                ELSE
+                    v_locale_parts := string_to_array(v_lang_spec_culture, '-');
+
+                    SELECT lang_data_jsonb
+                      INTO STRICT v_lang_data_jsonb
+                      FROM sys.babelfish_syslanguages
+                     WHERE lang_name_pg = v_locale_parts[1]
+                       AND territory = v_locale_parts[2];
+                END IF;
+            EXCEPTION
+                WHEN OTHERS THEN
+                    v_lang_spec_culture := 'EN_US';
+
+                    SELECT lang_data_jsonb
+                      INTO v_lang_data_jsonb
+                      FROM sys.babelfish_syslanguages
+                     WHERE spec_culture = v_lang_spec_culture::text;
+            END;
+        ELSE
+            v_is_cached := TRUE;
+        END IF;
+    END IF;
+
+    IF (NOT v_is_cached) THEN
+        BEGIN
+            PERFORM set_config(format('sys.lang_metadata_json.%s',
+                                                v_lang_spec_culture),
+                                        v_lang_data_jsonb::TEXT,
+                                        FALSE);
+        EXCEPTION
+            WHEN invalid_transaction_state THEN
+            -- This exception will only occur when we are trying to set config in parallel mode
+            -- we can ignore this error as we cannot store this config during a parallel operation
+        END;
+    END IF;
+
+    /*
+     * Without a culture, the order of the date parts is the one of the session:
+     * SET DATEFORMAT, or else the order of DateStyle if it is not the default.
+     */
+    IF (char_length(pg_catalog.btrim(p_lang_spec_culture)) = 0)
+    THEN
+        v_session_dateformat := pg_catalog.upper(coalesce(current_setting('babelfishpg_tsql.dateformat', true), ''));
+
+        IF (v_session_dateformat NOT IN ('MDY', 'DMY', 'YMD', 'YDM', 'MYD', 'DYM'))
+        THEN
+            v_session_dateformat := CASE
+                                       WHEN (current_setting('DateStyle') ~* 'DMY') THEN 'DMY'
+                                       WHEN (current_setting('DateStyle') ~* 'YMD') THEN 'YMD'
+                                       ELSE NULL
+                                    END;
+        END IF;
+
+        IF (v_session_dateformat IS NOT NULL)
+        THEN
+            v_lang_data_jsonb := jsonb_set(v_lang_data_jsonb, '{date_format}', to_jsonb(v_session_dateformat::TEXT));
+        END IF;
+    END IF;
+
+    RETURN v_lang_data_jsonb;
+EXCEPTION
+    WHEN invalid_text_representation THEN
+        RAISE USING MESSAGE := pg_catalog.format('The language metadata JSON value extracted from chache is not a valid JSON object.',
+                                      p_lang_spec_culture),
+                    HINT := 'Drop the current session, fix the appropriate record in "sys.babelfish_syslanguages" table, and try again after reconnection.';
+
+    WHEN OTHERS THEN
+        RAISE USING MESSAGE := pg_catalog.format('"%s" is not a valid special culture or language name parameter.',
+                                      p_lang_spec_culture),
+                    DETAIL := 'Use of incorrect "lang_spec_culture" parameter value during conversion process.',
+                    HINT := 'Change "lang_spec_culture" parameter to the proper value and try again.';
+END;
+$BODY$
+LANGUAGE plpgsql
+STABLE;
+
 -- BABEL-5975: drop the deprecated sys.pg_namespace_ext left behind by the rename
 -- above. All dependent views/functions have been recreated to bind to the new
 -- sys.pg_namespace_ext, so the non-CASCADE drop must succeed; if it fails, a
