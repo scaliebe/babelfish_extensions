@@ -1,0 +1,137 @@
+-- CONVERT of a character string to a date type follows SET DATEFORMAT
+SET DATEFORMAT dmy
+GO
+
+SELECT CONVERT(DATETIME, '28.09.2026'), CONVERT(DATETIME, '30.12.1899'), CONVERT(DATETIME, '01.01.2034 00:00:00')
+GO
+~~START~~
+datetime#!#datetime#!#datetime
+2026-09-28 00:00:00.0#!#1899-12-30 00:00:00.0#!#2034-01-01 00:00:00.0
+~~END~~
+
+
+SELECT CONVERT(SMALLDATETIME, '28.09.2026'), CONVERT(DATETIME2(0), '28.09.2026 13:14:15'), CONVERT(DATETIME, '28.09.2026 13:14:15')
+GO
+~~START~~
+smalldatetime#!#datetime2#!#datetime
+2026-09-28 00:00:00.0#!#2026-09-28 13:14:15#!#2026-09-28 13:14:15.0
+~~END~~
+
+
+SELECT CONVERT(DATE, '28/09/2026'), CONVERT(DATE, '28-09-2026'), CONVERT(DATETIME, '1.2.2026'), CONVERT(DATETIMEOFFSET(0), '28.09.2026 10:00:00 +02:00')
+GO
+~~START~~
+date#!#date#!#datetime#!#datetimeoffset
+2026-09-28#!#2026-09-28#!#2026-02-01 00:00:00.0#!#2026-09-28 10:00:00 +02:00
+~~END~~
+
+
+-- the same string is another date with another order
+SELECT CONVERT(DATE, '01.02.2026'), CONVERT(DATETIME, '03/04/2026 10:20:30')
+GO
+~~START~~
+date#!#datetime
+2026-02-01#!#2026-04-03 10:20:30.0
+~~END~~
+
+
+-- an explicit style wins
+SELECT CONVERT(DATETIME, '09/28/2026', 101), CONVERT(DATETIME, '28.09.2026', 104)
+GO
+~~START~~
+datetime#!#datetime
+2026-09-28 00:00:00.0#!#2026-09-28 00:00:00.0
+~~END~~
+
+
+-- formats that do not depend on the order
+SELECT CONVERT(DATETIME, '20260928'), CONVERT(DATETIME, '2026-09-28T10:20:30'), CONVERT(DATE, '2026-09-28')
+GO
+~~START~~
+datetime#!#datetime#!#date
+2026-09-28 00:00:00.0#!#2026-09-28 10:20:30.0#!#2026-09-28
+~~END~~
+
+
+SELECT TRY_CONVERT(DATETIME, '09.28.2026'), TRY_CONVERT(DATE, '28.09.2026')
+GO
+~~START~~
+datetime#!#date
+<NULL>#!#2026-09-28
+~~END~~
+
+
+SELECT CONVERT(DATETIME, '09.28.2026')
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: The conversion of a varchar data type to a datetime data type resulted in an out-of-range value.)~~
+
+
+SET DATEFORMAT mdy
+GO
+
+SELECT CONVERT(DATE, '01.02.2026'), CONVERT(DATETIME, '03/04/2026 10:20:30'), CONVERT(DATETIME, '09.28.2026')
+GO
+~~START~~
+date#!#datetime#!#datetime
+2026-01-02#!#2026-03-04 10:20:30.0#!#2026-09-28 00:00:00.0
+~~END~~
+
+
+SELECT TRY_CONVERT(DATETIME, '28.09.2026'), TRY_CONVERT(DATE, '09.28.2026')
+GO
+~~START~~
+datetime#!#date
+<NULL>#!#2026-09-28
+~~END~~
+
+
+SELECT CONVERT(DATETIME, '28.09.2026')
+GO
+~~ERROR (Code: 33557097)~~
+
+~~ERROR (Message: The conversion of a varchar data type to a datetime data type resulted in an out-of-range value.)~~
+
+
+SET DATEFORMAT ymd
+GO
+
+SELECT CONVERT(DATE, '2026.09.28'), CONVERT(DATETIME, '26.09.28'), CONVERT(DATETIME, '09/28/2026')
+GO
+~~START~~
+date#!#datetime#!#datetime
+2026-09-28#!#2026-09-28 00:00:00.0#!#2026-09-28 00:00:00.0
+~~END~~
+
+
+-- in a procedure and with a variable
+SET DATEFORMAT dmy
+GO
+
+CREATE PROCEDURE babel_convert_string_session_dateformat_p @s VARCHAR(30) AS
+SELECT CONVERT(DATETIME, @s), CONVERT(DATE, @s)
+GO
+
+EXEC babel_convert_string_session_dateformat_p '28.09.2026'
+GO
+~~START~~
+datetime#!#date
+2026-09-28 00:00:00.0#!#2026-09-28
+~~END~~
+
+
+DECLARE @s VARCHAR(30) = '30.12.1899'
+SELECT CONVERT(DATETIME, @s), DATEDIFF(day, CONVERT(DATETIME, @s), CONVERT(DATETIME, '31.12.1899'))
+GO
+~~START~~
+datetime#!#int
+1899-12-30 00:00:00.0#!#1
+~~END~~
+
+
+DROP PROCEDURE babel_convert_string_session_dateformat_p
+GO
+
+SET DATEFORMAT mdy
+GO
