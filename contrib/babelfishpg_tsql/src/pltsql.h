@@ -1977,6 +1977,10 @@ typedef struct PLtsql_protocol_plugin
 	/* INSERT EXEC support */
 	bool		(*pltsql_insert_exec_active) (void);
 
+	/* the base table column that a column of a view projects */
+	bool		(*pltsql_view_base_column) (Oid viewrelid, AttrNumber viewcol,
+											Oid *baserelid, AttrNumber *baseattnum);
+
 	/* Session level GUCs */
 	bool		quoted_identifier;
 	bool		arithabort;

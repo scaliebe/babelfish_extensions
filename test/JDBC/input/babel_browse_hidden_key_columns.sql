@@ -204,6 +204,62 @@ GO
 SELECT t.Name, tp.HerstellerID FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1
 GO
 
+-- a NOT NULL column of a table is described as NOT NULL, also without
+-- SET NO_BROWSETABLE ON; queries that can return NULL for such a column
+SELECT TerminalNr, Name FROM babel_browse_hk_terminal ORDER BY TerminalNr
+GO
+
+SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL
+GO
+
+SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION SELECT NULL ORDER BY 1
+GO
+
+SELECT x.TerminalNr FROM (SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL) x ORDER BY 1
+GO
+
+WITH c AS (SELECT TermTypID FROM babel_browse_hk_termtyp UNION ALL SELECT NULL) SELECT TermTypID FROM c ORDER BY 1
+GO
+
+SELECT tp.TermTypID, t.TerminalNr FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
+GO
+
+SELECT tp.TermTypID FROM babel_browse_hk_terminal t FULL JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.TerminalNr ORDER BY 1
+GO
+
+SELECT (SELECT tp.TermTypID FROM babel_browse_hk_termtyp tp WHERE tp.TermTypID = t.Typ) FROM babel_browse_hk_terminal t ORDER BY t.TerminalNr
+GO
+
+SELECT Jahr, Tag, COUNT(*) FROM babel_browse_hk_tag GROUP BY ROLLUP (Jahr, Tag) ORDER BY 1, 2
+GO
+
+SELECT TOP 1 TerminalNr, LAG(TerminalNr) OVER (ORDER BY TerminalNr) FROM babel_browse_hk_terminal ORDER BY TerminalNr
+GO
+
+UPDATE babel_browse_hk_terminal SET Typ = 7 OUTPUT deleted.TerminalNr, inserted.TerminalNr, deleted.Name WHERE TerminalNr = 1
+GO
+
+SET NO_BROWSETABLE ON
+GO
+
+SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL
+GO
+
+SELECT x.TerminalNr FROM (SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL) x ORDER BY 1
+GO
+
+WITH c AS (SELECT TermTypID FROM babel_browse_hk_termtyp UNION ALL SELECT NULL) SELECT TermTypID FROM c ORDER BY 1
+GO
+
+SELECT tp.TermTypID FROM babel_browse_hk_terminal t FULL JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.TerminalNr ORDER BY 1
+GO
+
+SELECT Jahr, Tag, COUNT(*) FROM babel_browse_hk_tag GROUP BY ROLLUP (Jahr, Tag) ORDER BY 1, 2
+GO
+
+SET NO_BROWSETABLE OFF
+GO
+
 DROP PROCEDURE babel_browse_hk_p
 GO
 

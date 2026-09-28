@@ -7,11 +7,11 @@ Table Columns:
 Column: col1
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: col2
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: data
   - Is Primary Key: False
   - Data Type: System.String
@@ -33,7 +33,7 @@ Table Columns:
 Column: col1
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: col2
   - Is Primary Key: False
   - Data Type: System.String
@@ -41,7 +41,7 @@ Column: col2
 Column: col3
   - Is Primary Key: False
   - Data Type: System.Boolean
-  - Allow Null: True
+  - Allow Null: False
 
 Primary Key Columns:
 - None
@@ -66,7 +66,7 @@ Column: col2
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: col3
   - Is Primary Key: False
   - Data Type: System.String
@@ -179,7 +179,7 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: data
   - Is Primary Key: False
   - Data Type: System.String
@@ -205,15 +205,15 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: email
   - Is Primary Key: False
   - Data Type: System.String
-  - Allow Null: True
+  - Allow Null: False
 Column: phone
   - Is Primary Key: False
   - Data Type: System.String
-  - Allow Null: True
+  - Allow Null: False
 Column: ssn
   - Is Primary Key: False
   - Data Type: System.String
@@ -240,15 +240,15 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: ref_col1
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: ref_col2
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: data
   - Is Primary Key: False
   - Data Type: System.String
@@ -264,15 +264,15 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: ref_col1
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: ref_col2
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: data
   - Is Primary Key: False
   - Data Type: System.String
@@ -302,11 +302,11 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: b_id
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: name
   - Is Primary Key: False
   - Data Type: System.String
@@ -337,11 +337,11 @@ Table Columns:
 Column: class_id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: class_name
   - Is Primary Key: False
   - Data Type: System.String
-  - Allow Null: True
+  - Allow Null: False
 Column: teacher_name
   - Is Primary Key: False
   - Data Type: System.String
@@ -397,11 +397,11 @@ Table Columns:
 Column: id
   - Is Primary Key: False
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: names
   - Is Primary Key: False
   - Data Type: System.String
-  - Allow Null: True
+  - Allow Null: False
 Column: val
   - Is Primary Key: False
   - Data Type: System.Decimal
@@ -426,7 +426,7 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: name
   - Is Primary Key: False
   - Data Type: System.String

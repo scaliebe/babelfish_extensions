@@ -1254,6 +1254,7 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 		TdsColumnMetaData *col = &colMetaData[attno];
 		uint32_t	tdsVersion = GetClientTDSVersion();
 		TargetEntry *tle = NULL;
+		bool		not_null_in_table = false;
 		coll_info_t cinfo = TdsLookupCollationTableCallback(InvalidOid);
 
 		serverCollationOid = cinfo.oid;
@@ -1328,24 +1329,38 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 		SetAttributesForColmetada(col);
 
 		/*
-		 * With SET NO_BROWSETABLE ON, describe a column of a table as NOT
-		 * NULL with a fixed-length type if it is that in its table, like SQL
-		 * Server does. Only if the query has an outer join, or an aggregate
-		 * step that can produce NULL for a grouping column, the column can be
-		 * NULL in the result; the plan does not tell which table is on the
-		 * nullable side, so all columns of such a query stay nullable.
+		 * Describe a column of a table in the result of a SELECT as NOT NULL
+		 * with a fixed-length type if it is that in its table, like SQL
+		 * Server does. Only if the query has an outer join, or a step that
+		 * can produce NULL for a column of a table (grouping sets, a branch
+		 * of a set operation), the column can be NULL in the result; the
+		 * plan does not tell which column that is, so all columns of such a
+		 * query stay nullable.
 		 */
 		if (OidIsValid(col->relOid) && col->attrNum > 0 &&
-			pltsql_plugin_handler_ptr && pltsql_plugin_handler_ptr->pltsql_no_browsetable &&
-			(*pltsql_plugin_handler_ptr->pltsql_no_browsetable) &&
+			plannedstmt != NULL && plannedstmt->commandType == CMD_SELECT &&
 			!PlanHasOuterJoin(plannedstmt) && !PlanHasNullingNode(plannedstmt))
 		{
-			HeapTuple	tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(col->relOid),
-											 Int16GetDatum(col->attrNum));
+			Oid			relid = col->relOid;
+			AttrNumber	attnum = col->attrNum;
+			HeapTuple	tp = NULL;
+
+			/* a column of a view is what it is in the base table */
+			if (get_rel_relkind(relid) == RELKIND_VIEW &&
+				!(pltsql_plugin_handler_ptr &&
+				  pltsql_plugin_handler_ptr->pltsql_view_base_column &&
+				  (*pltsql_plugin_handler_ptr->pltsql_view_base_column) (relid, attnum,
+																		 &relid, &attnum)))
+				relid = InvalidOid;
+
+			if (OidIsValid(relid))
+				tp = SearchSysCache2(ATTNUM, ObjectIdGetDatum(relid),
+									 Int16GetDatum(attnum));
 
 			if (HeapTupleIsValid(tp))
 			{
 				col->attNotNull = ((Form_pg_attribute) GETSTRUCT(tp))->attnotnull;
+				not_null_in_table = col->attNotNull;
 				ReleaseSysCache(tp);
 			}
 		}
@@ -1643,10 +1658,8 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 						 errmsg("data type %d not supported yet", atttypid)));
 		}
 
-		/* a NOT NULL column of a character type in browse mode: flags like SQL Server */
-		if (col->attNotNull && pltsql_plugin_handler_ptr &&
-			pltsql_plugin_handler_ptr->pltsql_no_browsetable &&
-			(*pltsql_plugin_handler_ptr->pltsql_no_browsetable))
+		/* a NOT NULL column of a character type: flags like SQL Server */
+		if (not_null_in_table)
 		{
 			switch (finfo->sendFuncId)
 			{
@@ -2521,6 +2534,17 @@ TdsPrintTup(TupleTableSlot *slot, DestReceiver *self)
 		if (slot->tts_isnull[attno])
 		{
 			/* Handle NULL values */
+
+			/*
+			 * A column that was described as NOT NULL has a type without
+			 * room for NULL; do not send a row the client cannot read.
+			 */
+			if (col->attNotNull)
+				ereport(ERROR,
+						(errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED),
+						 errmsg("NULL value in column \"%s\" that was described as NOT NULL",
+								col->colName.data)));
+
 			/*
 			 * when NBCROW token is used, all NULL values are sent using NULL
 			 * bitmap only
@@ -3174,8 +3198,10 @@ PlanHasOuterJoin(PlannedStmt *plannedstmt)
 
 /*
  * Does the plan contain a node that can put NULL into a column of a table:
- * an aggregate or grouping step (grouping sets), a set operation, a window
- * step? Walks the plan tree by hand, planstate_tree_walker needs a PlanState.
+ * an aggregate or grouping step (grouping sets), a set operation or an append
+ * step (the column has the origin of the first branch, another branch can be
+ * NULL), a window step? Walks the plan tree by hand, planstate_tree_walker
+ * needs a PlanState.
  */
 static bool
 PlanTreeHasNullingNode(Plan *plan)
@@ -3192,17 +3218,9 @@ PlanTreeHasNullingNode(Plan *plan)
 		case T_WindowAgg:
 		case T_SetOp:
 		case T_RecursiveUnion:
-			return true;
 		case T_Append:
-			foreach(lc, ((Append *) plan)->appendplans)
-				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
-					return true;
-			break;
 		case T_MergeAppend:
-			foreach(lc, ((MergeAppend *) plan)->mergeplans)
-				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))
-					return true;
-			break;
+			return true;
 		case T_BitmapAnd:
 			foreach(lc, ((BitmapAnd *) plan)->bitmapplans)
 				if (PlanTreeHasNullingNode((Plan *) lfirst(lc)))

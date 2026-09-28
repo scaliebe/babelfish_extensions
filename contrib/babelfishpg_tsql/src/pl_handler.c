@@ -1350,6 +1350,17 @@ pltsql_view_column_origin(Oid viewrelid, AttrNumber viewcol, int depth,
 }
 
 /*
+ * For the TDS layer, which describes a column of a view with the
+ * nullability of the column of the base table.
+ */
+static bool
+pltsql_view_base_column(Oid viewrelid, AttrNumber viewcol,
+						Oid *baserelid, AttrNumber *baseattnum)
+{
+	return pltsql_view_column_origin(viewrelid, viewcol, 0, baserelid, baseattnum);
+}
+
+/*
  * With SET NO_BROWSETABLE ON, SQL Server adds the primary key columns of
  * every base table of a SELECT that the statement does not select to the
  * result, as hidden columns: the client needs them to update the rows. Add
@@ -7507,6 +7518,7 @@ _PG_init(void)
 		(*pltsql_protocol_plugin_ptr)->pltsql_get_logical_schema_name = &get_logical_schema_name;
 		(*pltsql_protocol_plugin_ptr)->pltsql_is_fmtonly_stmt = &pltsql_fmtonly;
 		(*pltsql_protocol_plugin_ptr)->pltsql_no_browsetable = &pltsql_no_browsetable;
+		(*pltsql_protocol_plugin_ptr)->pltsql_view_base_column = &pltsql_view_base_column;
 		(*pltsql_protocol_plugin_ptr)->pltsql_get_user_for_database = &get_user_for_database;
 		(*pltsql_protocol_plugin_ptr)->switch_database_context = &switch_database_context;
 		(*pltsql_protocol_plugin_ptr)->get_insert_bulk_rows_per_batch = &get_insert_bulk_rows_per_batch;

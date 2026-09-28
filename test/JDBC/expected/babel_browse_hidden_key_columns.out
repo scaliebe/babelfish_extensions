@@ -398,6 +398,162 @@ T1a#!#99
 ~~END~~
 
 
+-- a NOT NULL column of a table is described as NOT NULL, also without
+-- SET NO_BROWSETABLE ON; queries that can return NULL for such a column
+SELECT TerminalNr, Name FROM babel_browse_hk_terminal ORDER BY TerminalNr
+GO
+~~START~~
+int#!#varchar
+1#!#T1a
+2#!#T2
+~~END~~
+
+
+SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL
+GO
+~~START~~
+int
+1
+<NULL>
+~~END~~
+
+
+SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION SELECT NULL ORDER BY 1
+GO
+~~START~~
+int
+<NULL>
+1
+~~END~~
+
+
+SELECT x.TerminalNr FROM (SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL) x ORDER BY 1
+GO
+~~START~~
+int
+<NULL>
+1
+~~END~~
+
+
+WITH c AS (SELECT TermTypID FROM babel_browse_hk_termtyp UNION ALL SELECT NULL) SELECT TermTypID FROM c ORDER BY 1
+GO
+~~START~~
+int
+<NULL>
+7
+~~END~~
+
+
+SELECT tp.TermTypID, t.TerminalNr FROM babel_browse_hk_terminal t LEFT JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.Typ ORDER BY t.TerminalNr
+GO
+~~START~~
+int#!#int
+7#!#1
+<NULL>#!#2
+~~END~~
+
+
+SELECT tp.TermTypID FROM babel_browse_hk_terminal t FULL JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.TerminalNr ORDER BY 1
+GO
+~~START~~
+int
+<NULL>
+<NULL>
+7
+~~END~~
+
+
+SELECT (SELECT tp.TermTypID FROM babel_browse_hk_termtyp tp WHERE tp.TermTypID = t.Typ) FROM babel_browse_hk_terminal t ORDER BY t.TerminalNr
+GO
+~~START~~
+int
+7
+<NULL>
+~~END~~
+
+
+SELECT Jahr, Tag, COUNT(*) FROM babel_browse_hk_tag GROUP BY ROLLUP (Jahr, Tag) ORDER BY 1, 2
+GO
+~~START~~
+int#!#int#!#int
+<NULL>#!#<NULL>#!#2
+2026#!#<NULL>#!#2
+2026#!#5#!#1
+2026#!#6#!#1
+~~END~~
+
+
+SELECT TOP 1 TerminalNr, LAG(TerminalNr) OVER (ORDER BY TerminalNr) FROM babel_browse_hk_terminal ORDER BY TerminalNr
+GO
+~~START~~
+int#!#int
+1#!#<NULL>
+~~END~~
+
+
+UPDATE babel_browse_hk_terminal SET Typ = 7 OUTPUT deleted.TerminalNr, inserted.TerminalNr, deleted.Name WHERE TerminalNr = 1
+GO
+~~START~~
+int#!#int#!#varchar
+1#!#1#!#T1a
+~~END~~
+
+
+SET NO_BROWSETABLE ON
+GO
+
+SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL
+GO
+~~START~~
+int
+1
+<NULL>
+~~END~~
+
+
+SELECT x.TerminalNr FROM (SELECT TerminalNr FROM babel_browse_hk_terminal WHERE TerminalNr = 1 UNION ALL SELECT NULL) x ORDER BY 1
+GO
+~~START~~
+int
+<NULL>
+1
+~~END~~
+
+
+WITH c AS (SELECT TermTypID FROM babel_browse_hk_termtyp UNION ALL SELECT NULL) SELECT TermTypID FROM c ORDER BY 1
+GO
+~~START~~
+int
+<NULL>
+7
+~~END~~
+
+
+SELECT tp.TermTypID FROM babel_browse_hk_terminal t FULL JOIN babel_browse_hk_termtyp tp ON tp.TermTypID = t.TerminalNr ORDER BY 1
+GO
+~~START~~
+int#!#int
+<NULL>#!#2
+<NULL>#!#1
+7#!#<NULL>
+~~END~~
+
+
+SELECT Jahr, Tag, COUNT(*) FROM babel_browse_hk_tag GROUP BY ROLLUP (Jahr, Tag) ORDER BY 1, 2
+GO
+~~START~~
+int#!#int#!#int
+<NULL>#!#<NULL>#!#2
+2026#!#<NULL>#!#2
+2026#!#5#!#1
+2026#!#6#!#1
+~~END~~
+
+
+SET NO_BROWSETABLE OFF
+GO
+
 DROP PROCEDURE babel_browse_hk_p
 GO
 
