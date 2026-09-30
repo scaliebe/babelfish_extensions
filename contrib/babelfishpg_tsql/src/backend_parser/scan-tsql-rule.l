@@ -126,6 +126,56 @@
 					return TSQL_XCONST;
 				}
 
+<tsql>{integer_junk}|{numeric_junk}|{real_junk}	{
+					/*
+					 * In T-SQL a keyword or an identifier can follow a
+					 * numeric literal without white space:
+					 * "WHERE a = 96AND b > 0". Return the number and
+					 * leave the rest for the next token. tsql_hex above
+					 * wins a tie, a hex literal never gets here as "0"
+					 * followed by an identifier unless it has characters
+					 * that tsql_hex does not take.
+					 */
+					int			len = 0;
+					bool		is_float = false;
+
+					SET_YYLLOC();
+					if (yytext[0] == '0' && (yytext[1] == 'x' || yytext[1] == 'X'))
+						yyerror("trailing junk after numeric literal");
+
+					while (isdigit((unsigned char) yytext[len]))
+						len++;
+					if (yytext[len] == '.')
+					{
+						is_float = true;
+						len++;
+						while (isdigit((unsigned char) yytext[len]))
+							len++;
+					}
+					if (yytext[len] == 'e' || yytext[len] == 'E')
+					{
+						int			exp = len + 1;
+
+						if (yytext[exp] == '+' || yytext[exp] == '-')
+							exp++;
+						if (isdigit((unsigned char) yytext[exp]))
+						{
+							is_float = true;
+							len = exp;
+							while (isdigit((unsigned char) yytext[len]))
+								len++;
+						}
+					}
+
+					yyless(len);
+					if (is_float)
+					{
+						yylval->str = pstrdup(yytext);
+						return FCONST;
+					}
+					return process_integer_literal(yytext, yylval, 10);
+				}
+
 <tsql>{tsql_ident}	{
 					int kwnum;
 					char *ident;
