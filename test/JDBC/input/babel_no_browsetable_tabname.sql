@@ -16,7 +16,7 @@ GO
 SET NO_BROWSETABLE ON
 GO
 
-SELECT t.*, tp.HerstellerID FROM babel_no_browsetable_t1 t LEFT JOIN babel_no_browsetable_t2 tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1 ORDER BY TerminalNr
+SELECT t.*, tp.TermTypID, tp.HerstellerID FROM babel_no_browsetable_t1 t LEFT JOIN babel_no_browsetable_t2 tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1 ORDER BY TerminalNr
 GO
 
 SELECT Name, Name + 'x' AS expr, Name AS other_name, TerminalNr AS terminalnr FROM babel_no_browsetable_t1 ORDER BY TerminalNr
