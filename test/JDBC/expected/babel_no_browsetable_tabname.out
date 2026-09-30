@@ -23,8 +23,8 @@ GO
 SELECT t.*, tp.HerstellerID FROM babel_no_browsetable_t1 t LEFT JOIN babel_no_browsetable_t2 tp ON tp.TermTypID = t.Typ WHERE TerminalNr = 1 ORDER BY TerminalNr
 GO
 ~~START~~
-int#!#varchar#!#int#!#int#!#int
-1#!#T1#!#7#!#99#!#7
+int#!#varchar#!#int#!#int
+1#!#T1#!#7#!#99
 ~~END~~
 
 
@@ -75,7 +75,204 @@ int#!#varchar#!#int
 ~~END~~
 
 
+-- the table names are sent like the statement writes them: one, two or
+-- three parts, delimited, in any case, in a join, a subquery and a CTE. The
+-- key columns are selected, so that the result is the same if the server
+-- adds the key columns that a statement does not select.
+CREATE TABLE babel_no_browsetable_t3 (a INT NOT NULL PRIMARY KEY, b TEXT, [c d] NTEXT)
+GO
+
+INSERT INTO babel_no_browsetable_t3 VALUES (1, 'x', N'y')
+GO
+~~ROW COUNT: 1~~
+
+
+SELECT a, b FROM babel_no_browsetable_t3
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT a, b FROM dbo.babel_no_browsetable_t3
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT a, b FROM master.dbo.babel_no_browsetable_t3
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT a, b FROM master..babel_no_browsetable_t3
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT a, b, [c d] FROM [dbo].[babel_no_browsetable_t3]
+GO
+~~START~~
+int#!#text#!#ntext
+1#!#x#!#y
+~~END~~
+
+
+SELECT a, b FROM "dbo"."babel_no_browsetable_t3"
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT x.a, x.b FROM DBO.BABEL_NO_BROWSETABLE_T3 x
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT t.a, t.b, u.TerminalNr, u.Name FROM babel_no_browsetable_t3 t JOIN dbo.babel_no_browsetable_t1 u ON u.TerminalNr = t.a
+GO
+~~START~~
+int#!#text#!#int#!#varchar
+1#!#x#!#1#!#T1a
+~~END~~
+
+
+SELECT s.a, s.b FROM (SELECT a, b FROM dbo.babel_no_browsetable_t3) s
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+WITH c AS (SELECT a, b FROM babel_no_browsetable_t3) SELECT c.a, c.b, u.TerminalNr, u.Name FROM c, [babel_no_browsetable_t1] u WHERE u.TerminalNr = c.a
+GO
+~~START~~
+int#!#text#!#int#!#varchar
+1#!#x#!#1#!#T1a
+~~END~~
+
+
+SELECT a, b FROM babel_no_browsetable_t3 UNION ALL SELECT a, b FROM dbo.babel_no_browsetable_t3
+GO
+~~START~~
+int#!#text
+1#!#x
+1#!#x
+~~END~~
+
+
+EXEC sp_executesql N'SELECT a, b FROM babel_no_browsetable_t3 WHERE a = @P1', N'@P1 INT', 1
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+UPDATE babel_no_browsetable_t3 SET b = 'z' OUTPUT deleted.b, inserted.b WHERE a = 1
+GO
+~~START~~
+text#!#text
+x#!#z
+~~END~~
+
+
 SET NO_BROWSETABLE OFF
+GO
+
+-- a temporary table, also after the connection was reset: its schema has no
+-- name then
+CREATE TABLE #babel_no_browsetable_tmp (a INT NOT NULL PRIMARY KEY, b TEXT)
+GO
+
+INSERT INTO #babel_no_browsetable_tmp VALUES (1, 'x')
+GO
+~~ROW COUNT: 1~~
+
+
+SET NO_BROWSETABLE ON
+GO
+
+SELECT * FROM #babel_no_browsetable_tmp
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+DROP TABLE #babel_no_browsetable_tmp
+GO
+
+EXEC sys.sp_reset_connection
+GO
+
+CREATE TABLE #babel_no_browsetable_tmp (a INT NOT NULL PRIMARY KEY, b TEXT)
+GO
+
+INSERT INTO #babel_no_browsetable_tmp VALUES (1, 'x')
+GO
+~~ROW COUNT: 1~~
+
+
+SET NO_BROWSETABLE ON
+GO
+
+SELECT * FROM #babel_no_browsetable_tmp
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+SELECT a, b FROM #babel_no_browsetable_tmp WHERE a = 1
+GO
+~~START~~
+int#!#text
+1#!#x
+~~END~~
+
+
+DROP TABLE #babel_no_browsetable_tmp
+GO
+
+SET NO_BROWSETABLE OFF
+GO
+
+-- a column of a large object type carries the table name without the setting
+SELECT a, b FROM babel_no_browsetable_t3
+GO
+~~START~~
+int#!#text
+1#!#z
+~~END~~
+
+
+SELECT a, b, [c d] FROM [dbo].[babel_no_browsetable_t3]
+GO
+~~START~~
+int#!#text#!#ntext
+1#!#z#!#y
+~~END~~
+
+
+DROP TABLE babel_no_browsetable_t3
 GO
 
 DROP TABLE babel_no_browsetable_t2

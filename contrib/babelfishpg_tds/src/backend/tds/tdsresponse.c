@@ -30,6 +30,7 @@
 #include "nodes/pathnodes.h"
 #include "parser/parse_coerce.h"
 #include "parser/parse_type.h"
+#include "parser/parser.h"
 #include "parser/parsetree.h"
 #include "utils/fmgroids.h"
 #include "utils/lsyscache.h"
@@ -132,6 +133,9 @@ static Oid sys_sparsevec_oid = InvalidOid;
 static Oid sys_halfvec_oid = InvalidOid;
 
 static void FillTabNameWithNumParts(StringInfo buf, uint8 numParts, TdsRelationMetaDataInfo relMetaDataInfo);
+static List *StatementRangeVars(const char *sourceText);
+static void SetTabNameAsWritten(TdsRelationMetaDataInfo relMetaDataInfo, List *rangevars,
+								const char *sourceText);
 static void FillTabNameWithoutNumParts(StringInfo buf, uint8 numParts, TdsRelationMetaDataInfo relMetaDataInfo);
 static void SetTdsEstateErrorData(void);
 static void ResetTdsEstateErrorData(void);
@@ -294,19 +298,10 @@ FillTabNameWithNumParts(StringInfo buf, uint8 numParts, TdsRelationMetaDataInfo 
 	initStringInfo(&tempBuf);
 
 	/*
-	 * XXX: In case a multi-part table name is used in the query, we should
-	 * send the same fully qualified name here in multiple parts.  For
-	 * example, if the following format is used in query: select * from t1; we
-	 * should send only part with partname 't1'.  However, if the following
-	 * format is used: select * from [dbo].[t1]; we should send two parts with
-	 * partname 'dbo' and 't1';
-	 *
-	 * In order to get this information, we definitely need some parser
-	 * support. Probably, we can save this information in portal while parsing
-	 * the table names.
-	 *
-	 * For now, always send it in two parts namespace.table name and hope that
-	 * client won't complain about the same.
+	 * The name is sent in the parts the statement wrote it with: for "select
+	 * * from t1" one part 't1', for "select * from [dbo].[t1]" the two parts
+	 * 'dbo' and 't1'. SetTabNameAsWritten() finds that out; if it cannot,
+	 * the name has the two parts schema and table.
 	 */
 
 	appendBinaryStringInfo(buf, (char *) &numParts, sizeof(numParts));
@@ -318,12 +313,195 @@ FillTabNameWithNumParts(StringInfo buf, uint8 numParts, TdsRelationMetaDataInfo 
 		resetStringInfo(&tempBuf);
 		TdsUTF8toUTF16StringInfo(&tempBuf, partName, strlen(partName));
 
-		partNameLen = htoLE16((uint16_t) pg_mbstrlen(partName));
+		/* the length counts UTF-16 code units, not characters */
+		partNameLen = htoLE16((uint16_t) (tempBuf.len / 2));
 		appendBinaryStringInfo(buf, (char *) &partNameLen, sizeof(partNameLen));
 		appendBinaryStringInfo(buf, tempBuf.data, tempBuf.len);
 	}
 
 	pfree(tempBuf.data);
+}
+
+/*
+ * Collect the table references in the FROM clauses of a raw statement, and
+ * the target tables of a DML statement. Only these can be a table of a
+ * column of the result.
+ */
+static void
+CollectRangeVars(Node *node, List **rangevars)
+{
+	ListCell   *lc;
+
+	if (node == NULL)
+		return;
+
+	check_stack_depth();
+
+	switch (nodeTag(node))
+	{
+		case T_RangeVar:
+			*rangevars = lappend(*rangevars, node);
+			break;
+		case T_List:
+			foreach(lc, (List *) node)
+				CollectRangeVars((Node *) lfirst(lc), rangevars);
+			break;
+		case T_RawStmt:
+			CollectRangeVars(((RawStmt *) node)->stmt, rangevars);
+			break;
+		case T_SelectStmt:
+			{
+				SelectStmt *stmt = (SelectStmt *) node;
+
+				CollectRangeVars((Node *) stmt->fromClause, rangevars);
+				CollectRangeVars((Node *) stmt->larg, rangevars);
+				CollectRangeVars((Node *) stmt->rarg, rangevars);
+				if (stmt->withClause)
+					CollectRangeVars((Node *) stmt->withClause->ctes, rangevars);
+			}
+			break;
+		case T_CommonTableExpr:
+			CollectRangeVars(((CommonTableExpr *) node)->ctequery, rangevars);
+			break;
+		case T_JoinExpr:
+			CollectRangeVars(((JoinExpr *) node)->larg, rangevars);
+			CollectRangeVars(((JoinExpr *) node)->rarg, rangevars);
+			break;
+		case T_RangeSubselect:
+			CollectRangeVars(((RangeSubselect *) node)->subquery, rangevars);
+			break;
+		case T_InsertStmt:
+			CollectRangeVars((Node *) ((InsertStmt *) node)->relation, rangevars);
+			break;
+		case T_UpdateStmt:
+			CollectRangeVars((Node *) ((UpdateStmt *) node)->relation, rangevars);
+			CollectRangeVars((Node *) ((UpdateStmt *) node)->fromClause, rangevars);
+			break;
+		case T_DeleteStmt:
+			CollectRangeVars((Node *) ((DeleteStmt *) node)->relation, rangevars);
+			CollectRangeVars((Node *) ((DeleteStmt *) node)->usingClause, rangevars);
+			break;
+		default:
+			break;
+	}
+}
+
+/*
+ * The table references of a statement text. The text was parsed before, so
+ * parsing it again does not fail; if it does nevertheless, there is no
+ * information about how the names were written.
+ */
+static List *
+StatementRangeVars(const char *sourceText)
+{
+	MemoryContext cxt = CurrentMemoryContext;
+	List	   *rangevars = NIL;
+
+	PG_TRY();
+	{
+		CollectRangeVars((Node *) raw_parser(sourceText, RAW_PARSE_DEFAULT), &rangevars);
+	}
+	PG_CATCH();
+	{
+		MemoryContextSwitchTo(cxt);
+		FlushErrorState();
+		rangevars = NIL;
+	}
+	PG_END_TRY();
+
+	return rangevars;
+}
+
+/*
+ * SQL Server sends the name of a table like the statement wrote it: "t",
+ * "dbo.t", "db.dbo.t" or "db..t", in the case of the statement and without
+ * the delimiters. Find the reference of the relation in the statement and
+ * take the parts from the text. The name stays schema.table if the statement
+ * does not name the relation, like the base table of a view.
+ */
+static void
+SetTabNameAsWritten(TdsRelationMetaDataInfo relMetaDataInfo, List *rangevars,
+					const char *sourceText)
+{
+	int			sourceLen = strlen(sourceText);
+	ListCell   *lc;
+
+	foreach(lc, rangevars)
+	{
+		RangeVar   *rv = (RangeVar *) lfirst(lc);
+		char	   *parts[3];
+		int			nparts = 0;
+		const char *p;
+		bool		valid = true;
+
+		if (rv->relname == NULL || rv->location < 0 || rv->location >= sourceLen ||
+			pg_strcasecmp(rv->relname, relMetaDataInfo->partName[0]) != 0)
+			continue;
+		if (rv->schemaname != NULL && relMetaDataInfo->partName[1] != NULL &&
+			pg_strcasecmp(rv->schemaname, relMetaDataInfo->partName[1]) != 0)
+			continue;
+
+		p = sourceText + rv->location;
+		for (;;)
+		{
+			StringInfoData part;
+
+			if (nparts == 3)
+			{
+				valid = false;
+				break;
+			}
+
+			initStringInfo(&part);
+			if (*p == '[' || *p == '"')
+			{
+				char		end = (*p == '[') ? ']' : '"';
+
+				p++;
+				while (*p != '\0')
+				{
+					if (*p == end)
+					{
+						if (p[1] != end)
+							break;
+						p++;
+					}
+					appendStringInfoChar(&part, *p++);
+				}
+				if (*p != end)
+				{
+					valid = false;
+					break;
+				}
+				p++;
+			}
+			else
+			{
+				while (isalnum((unsigned char) *p) || *p == '_' || *p == '@' ||
+					   *p == '#' || *p == '$' || IS_HIGHBIT_SET(*p))
+					appendStringInfoChar(&part, *p++);
+			}
+			parts[nparts++] = part.data;
+
+			if (*p != '.')
+				break;
+			p++;
+		}
+
+		/* the last part is the table, and only a middle part can be empty */
+		if (!valid || nparts == 0 ||
+			pg_strcasecmp(parts[nparts - 1], rv->relname) != 0 ||
+			(nparts > 1 && parts[0][0] == '\0'))
+			continue;
+
+		relMetaDataInfo->numParts = nparts;
+		relMetaDataInfo->partName[0] = parts[nparts - 1];
+		if (nparts > 1)
+			relMetaDataInfo->partName[1] = parts[nparts - 2];
+		if (nparts > 2)
+			relMetaDataInfo->partName[2] = parts[nparts - 3];
+		return;
+	}
 }
 
 /*
@@ -353,9 +531,9 @@ FillTabNameWithoutNumParts(StringInfo buf, uint8 numParts, TdsRelationMetaDataIn
 
 	if (strlen(tableName))
 		tableName++;			/* skip the first '.' */
-	TableNameLen += htoLE16((uint16_t) pg_mbstrlen(tableName));
-
 	TdsUTF8toUTF16StringInfo(&tempBuf, tableName, strlen(tableName));
+	/* the length counts UTF-16 code units, not characters */
+	TableNameLen += htoLE16((uint16_t) (tempBuf.len / 2));
 	appendBinaryStringInfo(buf, (char *) &TableNameLen, sizeof(TableNameLen));
 	appendBinaryStringInfo(buf, tempBuf.data, tempBuf.len);
 
@@ -842,7 +1020,7 @@ SendColumnMetadataToken(int natts, bool sendRowStat)
 
 			if (col->relinfo != NULL)
 			{
-				numParts = 2;
+				numParts = col->relinfo->numParts;
 				resetStringInfo(&tempBuf);
 
 				/*
@@ -1014,7 +1192,7 @@ SendTabNameToken(void)
 	foreach(lc, relMetaDataInfoList)
 	{
 		TdsRelationMetaDataInfo relMetaDataInfo = (TdsRelationMetaDataInfo) lfirst(lc);
-		uint8		numParts = 2;
+		uint8		numParts = relMetaDataInfo->numParts;
 
 		/*
 		 * In Table Name token -- NumParts, a multi-part table name, was
@@ -1215,7 +1393,8 @@ TdsGetGenericTypmod(Node *expr)
  */
 void
 PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *targetlist,
-					  int16 *formats, bool extendedInfo, bool fetchPkeys)
+					  int16 *formats, bool extendedInfo, bool fetchPkeys,
+					  const char *sourceText)
 {
 	int			natts = typeinfo->natts;
 	int			attno;
@@ -1680,9 +1859,24 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 	if (extendedInfo || sendTableName)
 	{
 		uint8		tableNum = 0;
+		List	   *rangevars = NIL;
 
 		oldContext = MemoryContextSwitchTo(MessageContext);
 		relMetaDataInfoList = NULL;
+
+		/*
+		 * The table names go to the client with a column of a large object
+		 * type, in the TABNAME token of a cursor and with SET NO_BROWSETABLE
+		 * ON. Only then look at how the statement wrote them.
+		 */
+		if (sourceText != NULL &&
+			(sendTableName ||
+			 (TdsRequestCtrl->request->reqType == TDS_REQUEST_SP_NUMBER &&
+			  ((TDSRequestSP) TdsRequestCtrl->request)->spType >= SP_CURSOR &&
+			  ((TDSRequestSP) TdsRequestCtrl->request)->spType <= SP_CURSORCLOSE) ||
+			 (pltsql_plugin_handler_ptr && pltsql_plugin_handler_ptr->pltsql_no_browsetable &&
+			  (*pltsql_plugin_handler_ptr->pltsql_no_browsetable))))
+			rangevars = StatementRangeVars(sourceText);
 
 		for (attno = 0; attno < natts; attno++)
 		{
@@ -1770,6 +1964,14 @@ PrepareRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *target
 					pfree(physical_schema_name);
 
 				relation_close(rel, AccessShareLock);
+
+				/*
+				 * A temporary table can be without a schema name here; its
+				 * name has one part then.
+				 */
+				relMetaDataInfo->numParts = (relMetaDataInfo->partName[1] != NULL) ? 2 : 1;
+				if (rangevars != NIL)
+					SetTabNameAsWritten(relMetaDataInfo, rangevars, sourceText);
 
 				relMetaDataInfoList = lappend(relMetaDataInfoList, relMetaDataInfo);
 				col->relinfo = relMetaDataInfo;
@@ -2301,7 +2503,7 @@ TdsSendInfoOrError(int token, int number, int state, int class,
 
 void
 TdsSendRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt,
-					  List *targetlist, int16 *formats)
+					  List *targetlist, int16 *formats, const char *sourceText)
 {
 	TDSRequest	request = TdsRequestCtrl->request;
 
@@ -2309,7 +2511,8 @@ TdsSendRowDescription(TupleDesc typeinfo, PlannedStmt *plannedstmt,
 	Assert(typeinfo != NULL);
 
 	/* Prepare the column metadata first */
-	PrepareRowDescription(typeinfo, plannedstmt, targetlist, formats, true, true);
+	PrepareRowDescription(typeinfo, plannedstmt, targetlist, formats, true, true,
+						  sourceText);
 
 	/*
 	 * If fNoMetadata flags is set in RPC header flag, the server doesn't need
@@ -3112,7 +3315,7 @@ void
 SendColumnMetadata(TupleDesc typeinfo, List *targetlist, int16 *formats)
 {
 	/* This will only be used for sp_preapre request hence do not need to pass plannedstmt */
-	TdsSendRowDescription(typeinfo, NULL, targetlist, formats);
+	TdsSendRowDescription(typeinfo, NULL, targetlist, formats, NULL);
 	TdsPrintTupShutdown();
 }
 
