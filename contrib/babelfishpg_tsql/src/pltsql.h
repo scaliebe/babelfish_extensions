@@ -1898,7 +1898,9 @@ typedef struct PLtsql_protocol_plugin
 
 	int		   *pltsql_read_proc_return_status;
 
-	void		(*send_column_metadata) (TupleDesc typeinfo, List *targetlist, int16 *formats);
+	void		(*send_column_metadata) (TupleDesc typeinfo, PlannedStmt *plannedstmt,
+										 List *targetlist, int16 *formats,
+										 const char *sourceText);
 	void		(*pltsql_read_procedure_info) (StringInfo inout_str,
 											   bool *is_proc,
 											   Oid *atttypid,

@@ -100,7 +100,8 @@ extern void TDSStatementBeginCallback(PLtsql_execstate *estate, PLtsql_stmt *stm
 extern void TDSStatementEndCallback(PLtsql_execstate *estate, PLtsql_stmt *stmt);
 extern void TDSStatementExceptionCallback(PLtsql_execstate *estate, PLtsql_stmt *stmt,
 										  bool terminate_batch);
-extern void SendColumnMetadata(TupleDesc typeinfo, List *targetlist, int16 *formats);
+extern void SendColumnMetadata(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *targetlist,
+							   int16 *formats, const char *sourceText);
 extern bool GetTdsEstateErrorData(int *number, int *severity, int *state);
 
 #endif							/* TDS_H */

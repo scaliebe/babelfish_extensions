@@ -454,7 +454,7 @@ Table Columns:
 Column: id
   - Is Primary Key: True
   - Data Type: System.Int32
-  - Allow Null: True
+  - Allow Null: False
 Column: data
   - Is Primary Key: False
   - Data Type: System.String

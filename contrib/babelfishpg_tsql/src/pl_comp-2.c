@@ -113,13 +113,44 @@ apply_post_compile_actions(PLtsql_function *func, InlineCodeBlockArgs *args)
 					{
 						CachedPlanSource *plansource = (CachedPlanSource *) linitial(plansources);
 						List	   *targetlist = CachedPlanGetTargetList(plansource, NULL);
+						int			curcmd = 0;
 
 						/*
 						 * Only SELECT command type should send column
-						 * metadata
+						 * metadata. The columns are described with the plan
+						 * and the statement text, like in the response to
+						 * sp_execute: SQL Server describes them the same way
+						 * in both responses, and a client binds its fields
+						 * by the description it got here.
 						 */
 						if (plansource->commandTag == CMDTAG_SELECT)
-							(*(*pltsql_protocol_plugin_ptr)->send_column_metadata) (plansource->resultDesc, targetlist, NULL);
+						{
+							CachedPlan *cplan = GetCachedPlan(plansource, NULL, CurrentResourceOwner, NULL);
+							PlannedStmt *plannedstmt = NULL;
+
+							if (cplan != NULL && list_length(cplan->stmt_list) == 1)
+								plannedstmt = linitial_node(PlannedStmt, cplan->stmt_list);
+							(*(*pltsql_protocol_plugin_ptr)->send_column_metadata) (plansource->resultDesc, plannedstmt, targetlist, NULL, plansource->query_string);
+							if (cplan != NULL)
+								ReleaseCachedPlan(cplan, CurrentResourceOwner);
+						}
+
+						/*
+						 * SQL Server ends the description of a prepared
+						 * statement with a DONEINPROC token (status MORE and
+						 * COUNT, the command of the statement, no rows), as
+						 * if it had run it without rows.
+						 */
+						if (plansource->commandTag == CMDTAG_SELECT)
+							curcmd = 0xC1;
+						else if (plansource->commandTag == CMDTAG_INSERT)
+							curcmd = 0xC3;
+						else if (plansource->commandTag == CMDTAG_DELETE)
+							curcmd = 0xC4;
+						else if (plansource->commandTag == CMDTAG_UPDATE)
+							curcmd = 0xC5;
+						if (curcmd != 0 && (*pltsql_protocol_plugin_ptr)->send_done)
+							(*(*pltsql_protocol_plugin_ptr)->send_done) (0xFF /* DONEINPROC */ , 0x11 /* MORE, COUNT */ , curcmd, 0);
 					}
 				}
 

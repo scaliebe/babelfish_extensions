@@ -2062,8 +2062,16 @@ SendReturnValueTokenInternal(ParameterToken token, uint8 status,
 	else
 		TdsPutInt32LE(0);
 
-	/* meta entries */
-	TdsPutbytes(&(token->paramMeta.metaEntry), token->paramMeta.metaLen);
+	/*
+	 * meta entries; SQL Server sends the flags of a return value as 0, not
+	 * as the flags of a column of that type.
+	 */
+	{
+		ColMetaEntry meta = token->paramMeta.metaEntry;
+
+		meta.type1.flags = 0;
+		TdsPutbytes(&meta, token->paramMeta.metaLen);
+	}
 
 	if (isNull)
 	{
@@ -3310,12 +3318,16 @@ TDSStatementExceptionCallback(PLtsql_execstate *estate, PLtsql_stmt *stmt, bool 
 /*
  * SendColumnMetadata - Api to Send the Column Metatadata,
  * used in sp_prepare and called from babelfishpg_tsql extension.
+ *
+ * The plan and the statement text let the columns be described like in the
+ * response to the execution of the statement: SQL Server describes a
+ * prepared statement the same way in both responses.
  */
 void
-SendColumnMetadata(TupleDesc typeinfo, List *targetlist, int16 *formats)
+SendColumnMetadata(TupleDesc typeinfo, PlannedStmt *plannedstmt, List *targetlist,
+				   int16 *formats, const char *sourceText)
 {
-	/* This will only be used for sp_preapre request hence do not need to pass plannedstmt */
-	TdsSendRowDescription(typeinfo, NULL, targetlist, formats, NULL);
+	TdsSendRowDescription(typeinfo, plannedstmt, targetlist, formats, sourceText);
 	TdsPrintTupShutdown();
 }
 
